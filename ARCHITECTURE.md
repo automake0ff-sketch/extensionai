@@ -26,11 +26,15 @@ src/
     api/
       auth/session/route.ts      Exchanges a Firebase ID token for a session cookie
       files/route.ts              Manual file edits from the editor
+      files/versions/route.ts      List a file's version history
+      files/restore/route.ts       Restore a file to a previous version
       projects/route.ts           Create/list projects
       generate/route.ts           Full generation pipeline
-      modify/route.ts             Chat-driven modification
+      modify/route.ts             Chat-driven modification — proposes a change, doesn't apply it
+      modify/apply/route.ts        Applies an accepted proposed change
+      modify/discard/route.ts      Discards a rejected proposed change
       validate/route.ts           Extension health check
-      export/route.ts             ZIP download
+      export/route.ts             ZIP download (blocks on validation errors unless ?force=true)
       tests/route.ts               Static test plan
       analyze/route.ts             Reviewer pass
       store-prep/route.ts          Chrome Web Store checklist (no auto-publish)
@@ -41,6 +45,7 @@ src/
       client.ts                   Browser Firebase Auth singleton
       session.ts                  Session-cookie verification helpers
       firestore.ts                 All Firestore reads/writes, with ownership checks
+      ratelimit.ts                 Firestore-backed fixed-window rate limiter
     validator/                    Manifest + security static checks
     zip/                          ZIP building
     usage/                        Credit accounting
@@ -140,22 +145,47 @@ Notes:
    - records credit usage,
    - appends the user prompt + a summary assistant message to `messages`.
 
-## Data flow for modification
+## Data flow for modification (propose → Accept/Reject → apply)
 
-`POST /api/modify` loads the project's current files and the last N chat
-messages, calls `modifyExtension()`, and for every changed file:
+Spec section 11 asks for an Accept/Reject flow. `POST /api/modify` **proposes**
+a change without touching any file:
 
-1. Snapshots the **current** content into `versions` (only if the file
-   already existed) before touching it — `snapshotFileVersion`.
-2. Applies the change (`create`/`update` → `upsertProjectFile`, `delete` →
-   `deleteProjectFileByPath`).
-3. Returns the **fresh full file list** in the response, since the browser
-   has no direct Firestore access to re-fetch it itself.
+1. Loads the project's current files and the last N chat messages.
+2. Calls `modifyExtension()` (the Modifier prompt).
+3. Spends the AI credit immediately — the model call already happened,
+   regardless of what the person decides next.
+4. Stores the proposed `{ message, changes }` on the `generations` doc with
+   `status: "pending_review"` (`markGenerationPendingReview`), and returns
+   `{ generationId, result }` to the client. **No file is modified yet.**
 
-This is the section 11/12 requirement: every AI edit is recoverable, even
-though the MVP doesn't yet expose a full visual diff/accept/reject UI — the
-`versions` subcollection is the durable safety net regardless of what the UI
-shows.
+The chat UI shows the proposed change (a file-level list of
+create/update/delete actions) with Accept/Reject buttons:
+
+- **Accept** → `POST /api/modify/apply { projectId, generationId }`. For each
+  changed file, snapshots the **current** content into `versions` (only if
+  the file already existed) before applying the change, then marks the
+  generation `"success"` and returns the fresh file list.
+- **Reject** → `POST /api/modify/discard { projectId, generationId }`. Marks
+  the generation `"discarded"`. No file is ever touched.
+
+This is the full section 11/12 requirement, not just the "at least save a
+version" fallback the spec allows for when a full Accept/Reject flow is too
+much for the MVP — both the version safety net *and* the explicit
+Accept/Reject gate are implemented here.
+
+## File version history
+
+`versions/{autoId}` (per project, per path) is written any time a file's
+content is about to be overwritten — whether that overwrite comes from
+`POST /api/modify/apply` or a manual edit via `PATCH /api/files`. The editor
+exposes this as a **History** panel next to the code editor
+(`components/editor/file-history-panel.tsx`):
+
+- `GET /api/files/versions?projectId=&path=` lists every version of a file,
+  newest first.
+- `POST /api/files/restore { projectId, versionId }` restores a file to that
+  version's content — after first snapshotting the file's *current* content
+  (so restoring is itself undoable, not a one-way door).
 
 ## Validator, ZIP export, preview
 
@@ -169,9 +199,18 @@ Unchanged by the migration — see the previous write-up below, still accurate:
 - **Preview** (`src/components/editor/extension-preview.tsx`) — explicitly
   *not* a real running extension. Renders the actual `popup.html` markup in
   a sandboxed iframe plus a parsed manifest summary, and says so in the UI.
-- **ZIP export** (`src/lib/zip/build.ts`, `POST /api/export`) — bundles the
+- **ZIP export** (`src/lib/zip/build.ts`, `GET /api/export`) — bundles the
   project's current files into a ZIP loadable via `chrome://extensions` →
-  Developer mode → Load unpacked.
+  Developer mode → Load unpacked. Runs `validateProject()` first; if there
+  are validation **errors**, it responds `409` with
+  `{ requiresConfirmation: true, validation }` instead of the file, and the
+  UI shows an explicit "Export anyway" override (`?force=true`). Warnings
+  alone never block the download.
+- **Rate limiting** (`src/lib/firebase/ratelimit.ts`) — a Firestore-backed
+  fixed-window counter guards `/api/generate` (5/min/user) and `/api/modify`
+  (10/min/user), so a retry loop or accidental double-click storm can't burn
+  through AI credits or hammer the provider. It's per-authenticated-user, not
+  per-IP — see SECURITY.md for the gap this leaves.
 
 ## Security model
 

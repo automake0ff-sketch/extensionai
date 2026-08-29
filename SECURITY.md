@@ -70,14 +70,11 @@ than splitting the logic between rules and route handlers.
 
 ## Known gaps in this MVP (tracked in ROADMAP.md)
 
-- The validator currently **warns** rather than **blocks** ZIP export when
-  it finds errors. Wiring "export" to refuse when `validation.valid` is
-  `false` (or requiring an explicit override) is a small, well-scoped
-  follow-up.
-- There is no rate limiting on the API routes yet beyond the monthly credit
-  ledger. A dedicated request-rate limiter (e.g. per-IP or per-user sliding
-  window) should sit in front of `/api/generate` and `/api/modify` before
-  this goes to production traffic.
+- There is no per-IP rate limiting, only per-authenticated-user (via
+  `lib/firebase/ratelimit.ts`, a Firestore-backed fixed-window counter on
+  `/api/generate` and `/api/modify`). An unauthenticated flood is already
+  blocked by `getSession()` returning 401 first, but a determined attacker
+  with many free accounts isn't meaningfully slowed down yet.
 - File size / project size limits are not yet enforced server-side.
 - CSP headers for the ExtenAI app itself (not the generated extensions) are
   not yet configured in `next.config.ts`.
@@ -86,6 +83,7 @@ than splitting the logic between rules and route handlers.
   history queries will work — see SETUP.md step 6. Until then those specific
   queries will fail loudly (Firestore returns a direct link to create the
   missing index in the error), not silently return wrong data.
+- GitHub export isn't implemented (see ROADMAP.md).
 
 ## Reporting a vulnerability
 

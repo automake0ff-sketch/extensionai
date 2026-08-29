@@ -3,28 +3,38 @@ import { getSession } from "@/lib/firebase/session";
 import { AiResponseValidationError, modifyExtension } from "@/lib/ai/extension";
 import { getUsage, recordUsage } from "@/lib/usage";
 import { toFriendlyError } from "@/lib/errors";
+import { checkRateLimit } from "@/lib/firebase/ratelimit";
 import {
   addChatMessage,
   completeGeneration,
   createGeneration,
-  deleteProjectFileByPath,
   getOwnedProject,
   getProfile,
-  getProjectFileByPath,
   getProjectFiles,
   listChatMessages,
-  snapshotFileVersion,
-  updateProject,
-  upsertProjectFile,
+  markGenerationPendingReview,
 } from "@/lib/firebase/firestore";
 
-const MODIFICATION_COST = 1;
 const MAX_HISTORY_MESSAGES = 10;
 
+/**
+ * Proposes a change but does NOT apply it (spec section 11: Accept/Reject).
+ * The AI credit is spent here, since the AI work already happened — accepting
+ * or discarding only decides whether the *files* get touched, via
+ * POST /api/modify/apply or POST /api/modify/discard.
+ */
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  }
+
+  const rateLimit = await checkRateLimit(session.uid, "modify", { windowMs: 60_000, max: 10 });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "You're sending changes too quickly. Please wait a moment and try again." },
+      { status: 429 }
+    );
   }
 
   const body = await request.json().catch(() => null);
@@ -66,34 +76,18 @@ export async function POST(request: Request) {
         .filter((m) => m.role === "user" || m.role === "assistant"),
     });
 
-    for (const change of result.changes) {
-      const existing = await getProjectFileByPath(projectId, change.path);
-
-      // Snapshot the previous version before mutating (spec section 11/12).
-      if (existing) {
-        await snapshotFileVersion(projectId, change.path, existing.content, "ai");
-      }
-
-      if (change.action === "delete") {
-        await deleteProjectFileByPath(projectId, change.path);
-      } else {
-        await upsertProjectFile(projectId, change.path, change.content ?? "");
-      }
-    }
-
-    await completeGeneration(projectId, generationId, {
-      status: "success",
+    await markGenerationPendingReview(projectId, generationId, {
       tokensUsed,
       model: usedModel,
+      message: result.message,
+      changes: result.changes,
     });
 
-    await recordUsage(session.uid, MODIFICATION_COST);
-    await addChatMessage(projectId, session.uid, "assistant", result.message);
-    await updateProject(projectId, { status: "ready" });
+    // Credit is spent when the AI call happens, not when the person decides
+    // whether to keep it — the work (and the tokens) already happened.
+    await recordUsage(session.uid, 1);
 
-    const updatedFiles = await getProjectFiles(projectId);
-
-    return NextResponse.json({ result, files: updatedFiles });
+    return NextResponse.json({ generationId, result });
   } catch (err) {
     await completeGeneration(projectId, generationId, {
       status: "error",
@@ -106,7 +100,7 @@ export async function POST(request: Request) {
         err,
         isValidation
           ? "The AI produced an invalid set of changes. Please try rephrasing your request."
-          : "We couldn't apply that change. Please try again."
+          : "We couldn't propose that change. Please try again."
       ),
       { status: 500 }
     );

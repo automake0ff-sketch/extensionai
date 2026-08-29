@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/firebase/session";
 import { buildExtensionZip, slugifyFilename } from "@/lib/zip/build";
+import { validateProject } from "@/lib/validator";
 import { getOwnedProject, getProjectFiles } from "@/lib/firebase/firestore";
 
 export async function GET(request: Request) {
@@ -11,6 +12,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get("projectId");
+  const force = searchParams.get("force") === "true";
   if (!projectId) {
     return NextResponse.json({ error: "A project id is required." }, { status: 400 });
   }
@@ -23,6 +25,22 @@ export async function GET(request: Request) {
   const files = await getProjectFiles(projectId);
   if (files.length === 0) {
     return NextResponse.json({ error: "This project has no files to export yet." }, { status: 400 });
+  }
+
+  // Spec section 15: run the validator before export. Errors block the
+  // download unless the person explicitly confirms via ?force=true — this
+  // closes the gap noted in earlier versions of SECURITY.md/ROADMAP.md,
+  // where the validator only warned and never actually blocked anything.
+  const validation = validateProject(files);
+  if (!validation.valid && !force) {
+    return NextResponse.json(
+      {
+        error: "This extension has validation errors. Review them, or export anyway.",
+        requiresConfirmation: true,
+        validation,
+      },
+      { status: 409 }
+    );
   }
 
   try {

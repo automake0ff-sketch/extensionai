@@ -3,6 +3,7 @@ import { getSession } from "@/lib/firebase/session";
 import { AiResponseValidationError, generateExtension } from "@/lib/ai/extension";
 import { getUsage, recordUsage } from "@/lib/usage";
 import { toFriendlyError } from "@/lib/errors";
+import { checkRateLimit } from "@/lib/firebase/ratelimit";
 import {
   addChatMessage,
   completeGeneration,
@@ -21,6 +22,14 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  }
+
+  const rateLimit = await checkRateLimit(session.uid, "generate", { windowMs: 60_000, max: 5 });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "You're generating extensions too quickly. Please wait a moment and try again." },
+      { status: 429 }
+    );
   }
 
   const body = await request.json().catch(() => null);

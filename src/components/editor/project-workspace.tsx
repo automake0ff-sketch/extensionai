@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import CodeEditor from "@uiw/react-textarea-code-editor";
 import {
+  AlertTriangle,
   ArrowLeft,
   Download,
   File as FileIcon,
@@ -15,12 +16,20 @@ import {
   Sparkles,
   Send,
 } from "lucide-react";
-import type { ChatMessage, Project, ProjectFile, ValidationResult } from "@/lib/types";
+import type { ChatMessage, FileChange, Project, ProjectFile, ValidationResult } from "@/lib/types";
 import { ExtensionPreview } from "./extension-preview";
 import { StorePrepPanel } from "./store-prep-panel";
 import { TestPlanPanel } from "./test-plan-panel";
+import { FileHistoryPanel } from "./file-history-panel";
+import { PendingChangeCard } from "./pending-change-card";
 
 type Tab = "preview" | "validate" | "tests" | "store";
+
+interface PendingChange {
+  generationId: string;
+  message: string;
+  changes: FileChange[];
+}
 
 function languageFor(path: string): string {
   if (path.endsWith(".json")) return "json";
@@ -54,12 +63,14 @@ export function ProjectWorkspace({
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [pendingChange, setPendingChange] = useState<PendingChange | null>(null);
   const [dirtyContent, setDirtyContent] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<Tab>("preview");
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportConfirm, setExportConfirm] = useState<ValidationResult | null>(null);
   const [lastChangedPaths, setLastChangedPaths] = useState<string[]>([]);
 
   const selectedFile = useMemo(() => files.find((f) => f.path === selectedPath) ?? null, [files, selectedPath]);
@@ -83,8 +94,13 @@ export function ProjectWorkspace({
     }
   }
 
+  function handleFileRestored(path: string, content: string) {
+    setFiles((prev) => prev.map((f) => (f.path === path ? { ...f, content } : f)));
+    if (selectedPath === path) setDirtyContent(null);
+  }
+
   async function handleSendMessage() {
-    if (!chatInput.trim() || chatLoading) return;
+    if (!chatInput.trim() || chatLoading || pendingChange) return;
     const userMessage = chatInput;
     setChatInput("");
     setChatError(null);
@@ -109,9 +125,33 @@ export function ProjectWorkspace({
         body: JSON.stringify({ projectId: project.id, message: userMessage }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "We couldn't propose that change.");
+
+      // The change is NOT applied yet — it waits for Accept/Reject (spec section 11).
+      setPendingChange({
+        generationId: data.generationId,
+        message: data.result.message,
+        changes: data.result.changes,
+      });
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  async function handleAcceptChange() {
+    if (!pendingChange) return;
+    try {
+      const res = await fetch("/api/modify/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: project.id, generationId: pendingChange.generationId }),
+      });
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "We couldn't apply that change.");
 
-      setLastChangedPaths(data.result.changes.map((c: { path: string }) => c.path));
+      setLastChangedPaths(pendingChange.changes.map((c) => c.path));
       setFiles(data.files as ProjectFile[]);
       setMessages((prev) => [
         ...prev,
@@ -120,14 +160,38 @@ export function ProjectWorkspace({
           project_id: project.id,
           user_id: project.user_id,
           role: "assistant",
-          content: data.result.message,
+          content: pendingChange.message,
           created_at: new Date().toISOString(),
         },
       ]);
     } catch (err) {
       setChatError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
-      setChatLoading(false);
+      setPendingChange(null);
+    }
+  }
+
+  async function handleRejectChange() {
+    if (!pendingChange) return;
+    try {
+      await fetch("/api/modify/discard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: project.id, generationId: pendingChange.generationId }),
+      });
+    } finally {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          project_id: project.id,
+          user_id: project.user_id,
+          role: "assistant",
+          content: "Discarded — no files were changed.",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      setPendingChange(null);
     }
   }
 
@@ -147,10 +211,15 @@ export function ProjectWorkspace({
     }
   }
 
-  async function handleExport() {
+  async function downloadZip(force: boolean) {
     setExporting(true);
     try {
-      const res = await fetch(`/api/export?projectId=${project.id}`);
+      const res = await fetch(`/api/export?projectId=${project.id}${force ? "&force=true" : ""}`);
+      if (res.status === 409) {
+        const data = await res.json();
+        setExportConfirm(data.validation);
+        return;
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? "We couldn't export this project.");
@@ -162,6 +231,7 @@ export function ProjectWorkspace({
       a.download = `${project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.zip`;
       a.click();
       URL.revokeObjectURL(url);
+      setExportConfirm(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Export failed.");
     } finally {
@@ -193,7 +263,7 @@ export function ProjectWorkspace({
             <ShieldCheck className="h-3.5 w-3.5" /> Validate
           </button>
           <button
-            onClick={handleExport}
+            onClick={() => downloadZip(false)}
             disabled={exporting}
             className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
           >
@@ -202,6 +272,38 @@ export function ProjectWorkspace({
           </button>
         </div>
       </div>
+
+      {exportConfirm && (
+        <div className="border-b border-warn/40 bg-warn/10 px-4 py-3 text-xs">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+            <div className="flex-1">
+              <p className="font-medium text-warn">
+                This extension has {exportConfirm.issues.filter((i) => i.level === "error").length} validation
+                error(s). Exporting now may produce a ZIP that Chrome refuses to load.
+              </p>
+              <ul className="mt-1 space-y-0.5 text-ink-dim">
+                {exportConfirm.issues
+                  .filter((i) => i.level === "error")
+                  .map((i, idx) => (
+                    <li key={idx}>• {i.message}</li>
+                  ))}
+              </ul>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={() => downloadZip(true)}
+                  className="rounded-full border border-warn/60 px-3 py-1 text-warn hover:bg-warn/10"
+                >
+                  Export anyway
+                </button>
+                <button onClick={() => setExportConfirm(null)} className="rounded-full px-3 py-1 hover:bg-ink">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* File tree */}
@@ -236,15 +338,25 @@ export function ProjectWorkspace({
             <span className="font-[family-name:var(--font-mono)] text-xs text-ink-dim">
               {selectedFile?.path ?? "Select a file"}
             </span>
-            {dirtyContent !== null && (
-              <button
-                onClick={handleSaveFile}
-                disabled={saving}
-                className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {dirtyContent !== null && (
+                <button
+                  onClick={handleSaveFile}
+                  disabled={saving}
+                  className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              )}
+              {selectedFile && (
+                <FileHistoryPanel
+                  key={selectedFile.path}
+                  projectId={project.id}
+                  path={selectedFile.path}
+                  onRestored={handleFileRestored}
+                />
+              )}
+            </div>
           </div>
           <div className="flex-1 overflow-auto">
             {selectedFile ? (
@@ -303,7 +415,7 @@ export function ProjectWorkspace({
             AI Assistant
           </div>
           <div className="flex-1 space-y-3 overflow-y-auto p-4">
-            {messages.length === 0 && (
+            {messages.length === 0 && !pendingChange && (
               <p className="text-sm text-ink-dim">Ask for changes, e.g. &ldquo;Add dark mode.&rdquo;</p>
             )}
             {messages.map((m) => (
@@ -321,6 +433,14 @@ export function ProjectWorkspace({
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
               </div>
             )}
+            {pendingChange && (
+              <PendingChangeCard
+                message={pendingChange.message}
+                changes={pendingChange.changes}
+                onAccept={handleAcceptChange}
+                onReject={handleRejectChange}
+              />
+            )}
             {chatError && <p className="text-sm text-bad">{chatError}</p>}
           </div>
           <div className="border-t border-ink-line p-3">
@@ -330,11 +450,15 @@ export function ProjectWorkspace({
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                placeholder="What would you like to change?"
-                disabled={chatLoading}
+                placeholder={pendingChange ? "Resolve the pending change above first" : "What would you like to change?"}
+                disabled={chatLoading || !!pendingChange}
                 className="flex-1 bg-transparent text-sm outline-none placeholder:text-ink-dim disabled:opacity-60"
               />
-              <button onClick={handleSendMessage} disabled={chatLoading || !chatInput.trim()} className="text-accent disabled:opacity-40">
+              <button
+                onClick={handleSendMessage}
+                disabled={chatLoading || !!pendingChange || !chatInput.trim()}
+                className="text-accent disabled:opacity-40"
+              >
                 <Send className="h-4 w-4" />
               </button>
             </div>

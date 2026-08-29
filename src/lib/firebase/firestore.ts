@@ -1,6 +1,7 @@
 import { adminDb } from "./admin";
 import type {
   ChatMessage,
+  FileChange,
   FileVersion,
   Generation,
   GenerationKind,
@@ -219,6 +220,21 @@ export async function listFileVersions(projectId: string, path: string): Promise
   });
 }
 
+export async function getFileVersionById(projectId: string, versionId: string): Promise<FileVersion | null> {
+  const snap = await versionsCol(projectId).doc(versionId).get();
+  if (!snap.exists) return null;
+  const data = snap.data()!;
+  return {
+    id: snap.id,
+    project_id: projectId,
+    path: data.path,
+    content: data.content,
+    version_number: data.versionNumber,
+    created_by: data.createdBy,
+    created_at: data.createdAt,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Generations
 // ---------------------------------------------------------------------------
@@ -253,6 +269,57 @@ export async function completeGeneration(
   if (fields.model !== undefined) update.model = fields.model;
   if (fields.errorMessage !== undefined) update.errorMessage = fields.errorMessage;
   await generationsCol(projectId).doc(generationId).update(update);
+}
+
+/**
+ * Stores a Modifier result as "pending review" instead of applying it —
+ * spec section 11's Accept/Reject flow. `POST /api/modify/apply` or
+ * `/api/modify/discard` resolve it later.
+ */
+export async function markGenerationPendingReview(
+  projectId: string,
+  generationId: string,
+  fields: { tokensUsed: number; model: string; message: string; changes: FileChange[] }
+): Promise<void> {
+  await generationsCol(projectId).doc(generationId).update({
+    status: "pending_review",
+    tokensUsed: fields.tokensUsed,
+    model: fields.model,
+    pendingMessage: fields.message,
+    pendingChanges: fields.changes,
+  });
+}
+
+interface PendingGeneration {
+  id: string;
+  status: string;
+  pendingMessage: string;
+  pendingChanges: FileChange[];
+}
+
+/** Returns the generation only if it belongs to the given project and is still pending review. */
+export async function getPendingGeneration(
+  projectId: string,
+  generationId: string
+): Promise<PendingGeneration | null> {
+  const snap = await generationsCol(projectId).doc(generationId).get();
+  if (!snap.exists) return null;
+  const data = snap.data()!;
+  if (data.status !== "pending_review") return null;
+  return {
+    id: snap.id,
+    status: data.status,
+    pendingMessage: data.pendingMessage ?? "",
+    pendingChanges: data.pendingChanges ?? [],
+  };
+}
+
+export async function resolveGeneration(
+  projectId: string,
+  generationId: string,
+  status: "success" | "discarded"
+): Promise<void> {
+  await generationsCol(projectId).doc(generationId).update({ status });
 }
 
 export async function listGenerations(projectId: string): Promise<Generation[]> {

@@ -53,7 +53,7 @@ export interface Generation {
   kind: GenerationKind;
   prompt: string;
   model: string;
-  status: "pending" | "success" | "error";
+  status: "pending" | "pending_review" | "success" | "discarded" | "error";
   error_message: string | null;
   tokens_used: number;
   created_at: string;
