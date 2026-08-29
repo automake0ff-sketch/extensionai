@@ -29,7 +29,7 @@ Status of the priority order from the product spec (section 25).
       **History** panel per file (`GET /api/files/versions`) with a
       **Restore** action (`POST /api/files/restore`) that itself snapshots
       the current content first, so restoring is undoable too.
-- [x] Accept/Reject flow for AI changes — `POST /api/modify` now proposes a
+- [x] Accept/Reject flow for AI changes — `POST /api/modify` proposes a
       change without touching any file. The chat shows the proposed diff
       (file list + action icons) with **Accept**/**Reject** buttons;
       accepting calls `POST /api/modify/apply` (applies with the same
@@ -40,20 +40,27 @@ Status of the priority order from the product spec (section 25).
 - [x] Test generation — `generateTests` (Tester prompt) produces a static
       test plan with `planned` vs. `manual_verification_required` cases. No
       test is ever reported as executed.
-- [ ] **Still not implemented:** GitHub export. Architecture is prepared
-      (`GITHUB_OAUTH_CLIENT_ID/SECRET` in `.env.example`, a disabled "Connect
-      GitHub" affordance in Settings) but the OAuth flow and repo/commit
-      creation don't exist yet. Per spec section 17, ZIP export was
-      prioritized instead — this is next in line for P1.
+- [x] GitHub export — connect via OAuth (`/api/github/connect` →
+      `/api/github/callback`, token encrypted at rest), then export any
+      project to a brand-new repository as a single atomic commit
+      (`/api/github/export`, using the Git Data API rather than one REST
+      call per file). Untested against a live GitHub account from this
+      environment — validate end-to-end against your own OAuth App before
+      depending on it in production.
 
-## P2 — not started (by design, per spec section 25)
+## P2
 
-- [ ] Stripe billing. `usage`/credits accounting exists and plans are
-      defined (`lib/usage/index.ts`), but no payment can currently be taken.
-      Upgrading a plan in Settings does not charge a card.
+- [x] Stripe billing — `POST /api/billing/checkout` (Checkout Session),
+      `POST /api/billing/portal` (Billing Portal for self-service
+      cancel/update card), and `POST /api/billing/webhook` (reconciles
+      `profiles.plan` from `checkout.session.completed` /
+      `customer.subscription.updated` / `.deleted`) are all implemented.
+      Also untested against a live Stripe account from this environment —
+      validate in Stripe test mode first.
 - [ ] Automated Chrome Web Store publishing. `/api/store-prep` builds the
       ZIP, permission explanations, privacy notes, and a checklist — the
-      person still submits manually via their own developer account.
+      person still submits manually via their own developer account. Per
+      spec section 18, this is intentionally the last thing to automate.
 - [ ] Team collaboration.
 - [ ] Marketplace.
 
@@ -68,10 +75,10 @@ Status of the priority order from the product spec (section 25).
       `/api/modify` (10/min per user), via a Firestore-backed fixed-window
       counter (`lib/firebase/ratelimit.ts`) that works correctly across
       serverless instances.
+- [x] **GitHub export** and **Stripe billing** — see P1/P2 above.
 
 ## Smaller follow-ups worth doing next
 
-- GitHub export (OAuth connect + create repo/commit).
 - A real line-level diff view for pending changes (today it's a file-level
   create/update/delete list, which is enough to make an informed
   Accept/Reject decision but doesn't show exactly what changed inside a file).
@@ -82,3 +89,10 @@ Status of the priority order from the product spec (section 25).
 - The rate limiter is a blunt fixed-window counter; a sliding-window or
   token-bucket implementation would be smoother if usage patterns show it
   matters.
+- GitHub export and Stripe billing should be exercised against real (test
+  mode / sandbox) accounts before shipping to real users — see the caveats
+  under each in ARCHITECTURE.md and SECURITY.md.
+- Stripe plan changes mid-subscription (upgrading Pro → Pro+) aren't handled
+  by a dedicated flow yet — the person would need to cancel and resubscribe,
+  or this could route through the Billing Portal's own plan-switching UI if
+  enabled on the Stripe side.

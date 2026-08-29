@@ -16,12 +16,14 @@ import {
   Sparkles,
   Send,
 } from "lucide-react";
+import { GithubMark } from "@/components/brand/github-mark";
 import type { ChatMessage, FileChange, Project, ProjectFile, ValidationResult } from "@/lib/types";
 import { ExtensionPreview } from "./extension-preview";
 import { StorePrepPanel } from "./store-prep-panel";
 import { TestPlanPanel } from "./test-plan-panel";
 import { FileHistoryPanel } from "./file-history-panel";
 import { PendingChangeCard } from "./pending-change-card";
+import { GithubExportModal } from "./github-export-modal";
 
 type Tab = "preview" | "validate" | "tests" | "store";
 
@@ -72,6 +74,7 @@ export function ProjectWorkspace({
   const [exporting, setExporting] = useState(false);
   const [exportConfirm, setExportConfirm] = useState<ValidationResult | null>(null);
   const [lastChangedPaths, setLastChangedPaths] = useState<string[]>([]);
+  const [showGithubModal, setShowGithubModal] = useState(false);
 
   const selectedFile = useMemo(() => files.find((f) => f.path === selectedPath) ?? null, [files, selectedPath]);
   const displayedContent = dirtyContent !== null ? dirtyContent : selectedFile?.content ?? "";
@@ -263,6 +266,12 @@ export function ProjectWorkspace({
             <ShieldCheck className="h-3.5 w-3.5" /> Validate
           </button>
           <button
+            onClick={() => setShowGithubModal(true)}
+            className="flex items-center gap-1.5 rounded-full border border-ink-line px-3 py-1.5 text-xs hover:bg-ink-raised"
+          >
+            <GithubMark className="h-3.5 w-3.5" /> Export to GitHub
+          </button>
+          <button
             onClick={() => downloadZip(false)}
             disabled={exporting}
             className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
@@ -272,6 +281,14 @@ export function ProjectWorkspace({
           </button>
         </div>
       </div>
+
+      {showGithubModal && (
+        <GithubExportModal
+          projectId={project.id}
+          defaultRepoName={project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}
+          onClose={() => setShowGithubModal(false)}
+        />
+      )}
 
       {exportConfirm && (
         <div className="border-b border-warn/40 bg-warn/10 px-4 py-3 text-xs">

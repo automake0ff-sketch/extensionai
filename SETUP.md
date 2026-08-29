@@ -63,7 +63,42 @@ firebase deploy --only firestore:rules,firestore:indexes
 and create the two composite indexes listed in `firestore.indexes.json`
 manually under Firestore → Indexes if you'd rather not install the CLI).
 
-## 7. Run it
+## 7. (Optional) enable GitHub export
+
+To let people export a project straight to a new GitHub repository (as
+opposed to just downloading the ZIP):
+
+1. Create an OAuth App at <https://github.com/settings/developers> → "New
+   OAuth App". Set the callback URL to `<your-app-url>/api/github/callback`.
+2. Copy the Client ID and generate a Client Secret into
+   `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET`.
+3. Generate an encryption key for the stored token:
+   `openssl rand -base64 32` → `APP_ENCRYPTION_KEY`.
+
+Without these three variables, the "Connect GitHub" button in Settings
+redirects back with a friendly "not configured" message instead of erroring.
+
+## 8. (Optional) enable billing
+
+To let people upgrade to Pro/Pro+ via Stripe Checkout:
+
+1. In the [Stripe dashboard](https://dashboard.stripe.com) (test mode is
+   fine), create two recurring **Prices** (Product catalog → Add product) —
+   one for Pro, one for Pro+.
+2. Copy their price IDs (start with `price_...`, not the product ID) into
+   `STRIPE_PRICE_PRO` / `STRIPE_PRICE_PRO_PLUS`.
+3. Copy your secret key (Developers → API keys) into `STRIPE_SECRET_KEY`.
+4. Register a webhook endpoint at `<your-app-url>/api/billing/webhook`
+   subscribed to `checkout.session.completed`,
+   `customer.subscription.updated`, and `customer.subscription.deleted`.
+   Copy its signing secret into `STRIPE_WEBHOOK_SECRET`. For local testing,
+   use `stripe listen --forward-to localhost:3000/api/billing/webhook`
+   instead and use the secret it prints.
+
+Without these variables, Settings still shows plan/usage — the upgrade
+buttons will just fail with a friendly error until configured.
+
+## 9. Run it
 
 ```bash
 npm run dev
@@ -72,7 +107,7 @@ npm run dev
 Visit `http://localhost:3000`, sign up, and create a project from
 `/projects/new`.
 
-## 8. Before shipping a change
+## 10. Before shipping a change
 
 ```bash
 npm run lint

@@ -15,11 +15,14 @@ Environment Variables). See `.env.example` for the canonical list.
 | `FIREBASE_PROJECT_ID` | Yes | **No** | Admin SDK service account — identifies the project for server-side Firestore/Auth calls. |
 | `FIREBASE_CLIENT_EMAIL` | Yes | **No** | Admin SDK service account email. |
 | `FIREBASE_PRIVATE_KEY` | Yes | **No** | Admin SDK service account private key. Grants full read/write to Firestore and full control of Auth — treat like any other master secret. |
+| `APP_ENCRYPTION_KEY` | Yes, if GitHub export is enabled | **No** | AES-256-GCM key (32 bytes, base64) used to encrypt the GitHub access token before it's stored in Firestore. Generate with `openssl rand -base64 32`. |
 | `AI_PROVIDER` | Yes | No | Selects the implementation in `lib/ai/providers/`. Currently only `"anthropic"`. |
 | `AI_API_KEY` | Yes | No | Secret key for the configured provider. |
 | `AI_MODEL` | No | No | Overrides the provider's default model string. |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No (not wired up) | Mixed | Reserved for the billing phase — see ROADMAP.md. |
-| `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | No (not wired up) | No | Reserved for GitHub *export* (pushing a project to a new repo) — not to be confused with "Sign in with GitHub", which is configured entirely in the Firebase console instead. |
+| `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | No — enables GitHub *export* (create repo/commit) if set | No | From a GitHub OAuth App (see SETUP.md). Not to be confused with "Sign in with GitHub", which is configured entirely in the Firebase console. |
+| `STRIPE_SECRET_KEY` | No — enables billing if set | **No** | Server-side Stripe API key. |
+| `STRIPE_WEBHOOK_SECRET` | No — required once billing is enabled | **No** | Verifies that `/api/billing/webhook` requests actually came from Stripe. |
+| `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PRO_PLUS` | No — required once billing is enabled | No | Stripe recurring Price IDs for the two paid plans. |
 
 ## Why the `NEXT_PUBLIC_FIREBASE_*` values are safe to expose
 

@@ -11,6 +11,8 @@ export interface Profile {
   name: string | null;
   avatar_url: string | null;
   plan: "free" | "pro" | "pro_plus";
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
   created_at: string;
 }
 

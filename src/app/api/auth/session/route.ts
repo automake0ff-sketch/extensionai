@@ -35,6 +35,8 @@ export async function POST(request: Request) {
         name: decoded.name ?? null,
         avatarUrl: decoded.picture ?? null,
         plan: "free",
+        stripeCustomerId: null,
+        stripeSubscriptionId: null,
         createdAt: new Date().toISOString(),
       });
     }

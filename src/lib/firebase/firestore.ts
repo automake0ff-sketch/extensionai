@@ -55,7 +55,64 @@ function messagesCol(projectId: string) {
 
 export async function getProfile(uid: string): Promise<Profile | null> {
   const snap = await adminDb().collection("profiles").doc(uid).get();
-  return snap.exists ? (snap.data() as Profile) : null;
+  if (!snap.exists) return null;
+  const data = snap.data()!;
+  return {
+    id: snap.id,
+    email: data.email,
+    name: data.name ?? null,
+    avatar_url: data.avatarUrl ?? null,
+    plan: data.plan,
+    stripe_customer_id: data.stripeCustomerId ?? null,
+    stripe_subscription_id: data.stripeSubscriptionId ?? null,
+    created_at: data.createdAt,
+  };
+}
+
+/** Used by the Stripe webhook, which only knows the Stripe customer ID. */
+export async function getProfileByStripeCustomerId(customerId: string): Promise<Profile | null> {
+  const snap = await adminDb().collection("profiles").where("stripeCustomerId", "==", customerId).limit(1).get();
+  if (snap.empty) return null;
+  return getProfile(snap.docs[0].id);
+}
+
+export async function updateProfileBilling(
+  uid: string,
+  fields: { plan?: Profile["plan"]; stripeCustomerId?: string | null; stripeSubscriptionId?: string | null }
+): Promise<void> {
+  const update: Record<string, unknown> = {};
+  if (fields.plan !== undefined) update.plan = fields.plan;
+  if (fields.stripeCustomerId !== undefined) update.stripeCustomerId = fields.stripeCustomerId;
+  if (fields.stripeSubscriptionId !== undefined) update.stripeSubscriptionId = fields.stripeSubscriptionId;
+  await adminDb().collection("profiles").doc(uid).update(update);
+}
+
+// ---------------------------------------------------------------------------
+// GitHub connection (see lib/github/client.ts)
+// ---------------------------------------------------------------------------
+
+export async function saveGithubConnection(
+  uid: string,
+  fields: { githubLogin: string; encryptedAccessToken: string }
+): Promise<void> {
+  await adminDb().collection("githubConnections").doc(uid).set({
+    githubLogin: fields.githubLogin,
+    encryptedAccessToken: fields.encryptedAccessToken,
+    connectedAt: new Date().toISOString(),
+  });
+}
+
+export async function getGithubConnection(
+  uid: string
+): Promise<{ githubLogin: string; encryptedAccessToken: string } | null> {
+  const snap = await adminDb().collection("githubConnections").doc(uid).get();
+  if (!snap.exists) return null;
+  const data = snap.data()!;
+  return { githubLogin: data.githubLogin, encryptedAccessToken: data.encryptedAccessToken };
+}
+
+export async function deleteGithubConnection(uid: string): Promise<void> {
+  await adminDb().collection("githubConnections").doc(uid).delete();
 }
 
 // ---------------------------------------------------------------------------

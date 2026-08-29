@@ -38,6 +38,13 @@ src/
       tests/route.ts               Static test plan
       analyze/route.ts             Reviewer pass
       store-prep/route.ts          Chrome Web Store checklist (no auto-publish)
+      github/connect/route.ts       Starts the GitHub OAuth flow
+      github/callback/route.ts      Exchanges the OAuth code, stores an encrypted token
+      github/disconnect/route.ts    Removes the stored GitHub connection
+      github/export/route.ts        Creates a repo and pushes the project as one commit
+      billing/checkout/route.ts     Creates a Stripe Checkout session
+      billing/portal/route.ts        Creates a Stripe Billing Portal session
+      billing/webhook/route.ts       Reconciles subscription state from Stripe events
   lib/
     ai/                          Provider-agnostic AI layer (see below)
     firebase/
@@ -46,6 +53,9 @@ src/
       session.ts                  Session-cookie verification helpers
       firestore.ts                 All Firestore reads/writes, with ownership checks
       ratelimit.ts                 Firestore-backed fixed-window rate limiter
+    github/client.ts               Minimal GitHub OAuth + REST client (no SDK dependency)
+    stripe/client.ts                Stripe SDK singleton + plan/price mapping
+    crypto.ts                       AES-256-GCM encrypt/decrypt for secrets stored in Firestore
     validator/                    Manifest + security static checks
     zip/                          ZIP building
     usage/                        Credit accounting
@@ -211,6 +221,70 @@ Unchanged by the migration — see the previous write-up below, still accurate:
   (10/min/user), so a retry loop or accidental double-click storm can't burn
   through AI credits or hammer the provider. It's per-authenticated-user, not
   per-IP — see SECURITY.md for the gap this leaves.
+
+## GitHub export
+
+Spec section 17. The person connects their GitHub account once (Settings →
+Connect GitHub), then can export any project to a brand-new repository as a
+**single commit** from that project's workspace page.
+
+**Connecting** (`/api/github/connect` → `/api/github/callback`):
+
+1. `GET /api/github/connect` requires a session, generates a random `state`,
+   stores it in a short-lived `httpOnly` cookie, and redirects to GitHub's
+   OAuth authorize URL (scope: `repo`).
+2. GitHub redirects back to `GET /api/github/callback` with a `code` and the
+   same `state`. The route checks `state` against the cookie (CSRF
+   protection), exchanges `code` for an access token
+   (`lib/github/client.ts#exchangeCodeForToken`), looks up the GitHub
+   username, **encrypts the token** (`lib/crypto.ts`), and stores
+   `{ githubLogin, encryptedAccessToken }` in `githubConnections/{uid}`.
+3. The token is only ever decrypted server-side, right before a GitHub API
+   call (`decryptSecret` in `/api/github/export`) — it's never sent to the
+   browser.
+
+**Exporting** (`/api/github/export`):
+
+1. Creates a new repository via the GitHub REST API
+   (`lib/github/client.ts#createRepo`).
+2. Writes every project file as **one atomic commit** using the Git Data API
+   — create a blob per file, build a tree, create a commit, move the branch
+   ref (`commitFiles`) — rather than one REST "create file" call per file,
+   which would create one commit per file instead.
+3. Returns the repository and commit URLs, shown in a modal
+   (`components/editor/github-export-modal.tsx`) with a link to GitHub.
+
+This has not been exercised against a real GitHub OAuth App in this
+environment — set `GITHUB_OAUTH_CLIENT_ID`/`SECRET` and test end-to-end
+against your own account before relying on it in production.
+
+## Billing (Stripe)
+
+Spec sections 20/21. Unlike the P0/P1 features above, Stripe billing here is
+genuinely optional infrastructure — the app works entirely on the free plan's
+credit ceiling without it. When configured (`STRIPE_SECRET_KEY`,
+`STRIPE_PRICE_PRO`, `STRIPE_PRICE_PRO_PLUS`, `STRIPE_WEBHOOK_SECRET`):
+
+- **`POST /api/billing/checkout`** — creates (or reuses) a Stripe Customer
+  for the signed-in user, stores `stripeCustomerId` on their `profiles` doc,
+  and creates a Checkout Session in subscription mode. The plan the person
+  is buying is stamped into the session's `metadata` (`{ uid, plan }`) so the
+  webhook doesn't need to look up price IDs later.
+- **`POST /api/billing/portal`** — opens a Stripe-hosted Billing Portal
+  session for the person's existing customer, so they can update their card,
+  cancel, or see invoices without ExtenAI needing to build any of that UI.
+- **`POST /api/billing/webhook`** — verifies the Stripe signature
+  (`stripe.webhooks.constructEvent`), and on `checkout.session.completed`
+  writes the new `plan` + `stripeCustomerId` + `stripeSubscriptionId` onto
+  the buyer's profile; on `customer.subscription.updated`/`.deleted`,
+  downgrades the profile back to `free` if the subscription is no longer
+  active. Register this endpoint's URL as a webhook destination in the
+  Stripe dashboard (or via `stripe listen --forward-to` locally).
+
+Like GitHub export, this hasn't been run against a live Stripe account from
+this environment — the flow is complete and internally consistent, but treat
+it as a strong starting point to validate against a real (test-mode) Stripe
+account rather than something already proven in production.
 
 ## Security model
 

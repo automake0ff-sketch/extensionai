@@ -54,6 +54,19 @@
   the ID token on every request. The cookie is `httpOnly` + `secure` (in
   production) + `sameSite: lax`, so it isn't readable from JavaScript and
   isn't sent on cross-site requests.
+- **GitHub tokens encrypted at rest.** The OAuth access token GitHub issues
+  after "Connect GitHub" is encrypted (AES-256-GCM, `lib/crypto.ts`) before
+  being stored in `githubConnections/{uid}`, and only decrypted server-side,
+  immediately before a GitHub API call. A leaked Firestore export doesn't
+  hand over usable GitHub credentials on its own. The GitHub OAuth flow
+  itself uses a random `state` value in a short-lived `httpOnly` cookie to
+  prevent CSRF (`/api/github/connect` → `/api/github/callback`).
+- **Stripe webhook signature verification.** `/api/billing/webhook` calls
+  `stripe.webhooks.constructEvent()` with the raw request body and the
+  `Stripe-Signature` header before trusting anything in the payload — an
+  unsigned or mis-signed request is rejected with 400 before any Firestore
+  write happens. Plan changes are driven entirely by verified webhook
+  events, never by a value the client sends directly.
 
 ## Why not Firestore rules for this?
 
@@ -83,7 +96,15 @@ than splitting the logic between rules and route handlers.
   history queries will work — see SETUP.md step 6. Until then those specific
   queries will fail loudly (Firestore returns a direct link to create the
   missing index in the error), not silently return wrong data.
-- GitHub export isn't implemented (see ROADMAP.md).
+- GitHub export and Stripe billing are both functionally complete but
+  untested against real GitHub/Stripe accounts from this environment — treat
+  both as a solid starting point to validate in test mode before relying on
+  them with real users. See ARCHITECTURE.md for what each integration does.
+- `npm audit` reports moderate-severity issues in a transitive dependency of
+  `firebase-admin` (an outdated `uuid` version pulled in via
+  `@google-cloud/storage`). Not exploitable through anything this app does
+  with `firebase-admin` (Firestore/Auth only, no Cloud Storage usage), but
+  worth revisiting on a `firebase-admin` major-version upgrade.
 
 ## Reporting a vulnerability
 
