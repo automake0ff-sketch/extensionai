@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/*
+  ExtenAI design tokens.
+  Concept: a dark "browser chrome" aesthetic -- the product's own subject
+  (building browser extensions) is the visual language. The signature motif
+  is a simplified address-bar shape used for the hero input and section
+  dividers, evoking the omnibox rather than a generic hero card.
+
+  Palette:
+    --ink        #0F1115  base background, near-black ink (not pure black)
+    --ink-raised #171A21  cards / raised surfaces
+    --ink-line   #262B36  hairline borders
+    --paper      #ECEAE4  warm off-white foreground text
+    --paper-dim  #8B909B  muted text
+    --accent     #5B7FFF  cobalt -- primary actions, links, focus
+    --accent-dim #263056  cobalt tint for subtle fills
+    --good       #35C97F  success / diff additions
+    --warn       #F2B84B  warnings
+    --bad        #F2555B  errors / diff removals
+*/
+
+:root {
+  --ink: #0f1115;
+  --ink-raised: #171a21;
+  --ink-line: #262b36;
+  --paper: #ecead4;
+  --paper-dim: #8b909b;
+  --accent: #5b7fff;
+  --accent-dim: #263056;
+  --good: #35c97f;
+  --warn: #f2b84b;
+  --bad: #f2555b;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-raised: var(--ink-raised);
+  --color-ink-line: var(--ink-line);
+  --color-ink-100: var(--paper);
+  --color-ink-dim: var(--paper-dim);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+/* Signature omnibox shape, reused for the hero input and a few section dividers. */
+.omnibox {
+  border-radius: 999px;
+  border: 1px solid var(--ink-line);
+  background: var(--ink-raised);
+}
+
+.omnibox:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -1,0 +1,19 @@
+rules_version = '2';
+
+// ExtenAI never talks to Firestore directly from the browser — every read
+// and write goes through a Next.js Route Handler using the Firebase Admin
+// SDK (see src/lib/firebase/firestore.ts), which authenticates the request
+// via a verified session cookie (src/lib/firebase/session.ts) and enforces
+// per-user ownership in application code before touching any document.
+//
+// The Admin SDK bypasses these rules entirely, so this file's only job is
+// defense in depth: if anything ever tried to reach Firestore straight from
+// a client SDK (a bug, a future feature added without thinking it through),
+// it should be refused outright rather than silently allowed.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
