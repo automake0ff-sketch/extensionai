@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Check, FilePlus, FileMinus, FileEdit, Loader2, X } from "lucide-react";
-import type { FileChange } from "@/lib/types";
+import { Check, ChevronDown, ChevronRight, FilePlus, FileMinus, FileEdit, Loader2, X } from "lucide-react";
+import type { FileChange, ProjectFile } from "@/lib/types";
+import { FileDiffView } from "./file-diff-view";
 
 const ACTION_ICON = { create: FilePlus, update: FileEdit, delete: FileMinus } as const;
 const ACTION_COLOR = { create: "text-good", update: "text-accent", delete: "text-bad" } as const;
@@ -10,15 +11,18 @@ const ACTION_COLOR = { create: "text-good", update: "text-accent", delete: "text
 export function PendingChangeCard({
   message,
   changes,
+  originalFiles,
   onAccept,
   onReject,
 }: {
   message: string;
   changes: FileChange[];
+  originalFiles: ProjectFile[];
   onAccept: () => Promise<void>;
   onReject: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState<"accept" | "reject" | null>(null);
+  const [expandedPath, setExpandedPath] = useState<string | null>(null);
 
   return (
     <div className="mr-6 rounded-2xl border border-accent/40 bg-ink-raised p-3 text-sm">
@@ -29,10 +33,31 @@ export function PendingChangeCard({
       <ul className="mt-1.5 space-y-1">
         {changes.map((c) => {
           const Icon = ACTION_ICON[c.action];
+          const isExpanded = expandedPath === c.path;
+          const original = originalFiles.find((f) => f.path === c.path);
           return (
-            <li key={c.path} className="flex items-center gap-1.5 text-xs">
-              <Icon className={`h-3.5 w-3.5 shrink-0 ${ACTION_COLOR[c.action]}`} />
-              <span className="truncate font-[family-name:var(--font-mono)]">{c.path}</span>
+            <li key={c.path}>
+              <button
+                onClick={() => setExpandedPath(isExpanded ? null : c.path)}
+                className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left text-xs hover:bg-ink"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-3 w-3 shrink-0 text-ink-dim" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 shrink-0 text-ink-dim" />
+                )}
+                <Icon className={`h-3.5 w-3.5 shrink-0 ${ACTION_COLOR[c.action]}`} />
+                <span className="truncate font-[family-name:var(--font-mono)]">{c.path}</span>
+              </button>
+              {isExpanded && (
+                <div className="mt-1 mb-2 ml-4">
+                  <FileDiffView
+                    action={c.action}
+                    oldContent={original?.content ?? ""}
+                    newContent={c.content ?? ""}
+                  />
+                </div>
+              )}
             </li>
           );
         })}

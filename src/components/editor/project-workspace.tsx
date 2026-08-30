@@ -198,6 +198,19 @@ export function ProjectWorkspace({
     }
   }
 
+  function handleTabChange(nextTab: Tab) {
+    if (nextTab === "preview" && tab !== "preview") {
+      fetch("/api/analytics/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "preview_opened", projectId: project.id }),
+      }).catch(() => {
+        // Analytics must never interrupt navigation.
+      });
+    }
+    setTab(nextTab);
+  }
+
   async function handleValidate() {
     setValidating(true);
     setTab("validate");
@@ -409,7 +422,7 @@ export function ProjectWorkspace({
             ].map((t) => (
               <button
                 key={t.id}
-                onClick={() => setTab(t.id)}
+                onClick={() => handleTabChange(t.id)}
                 className={`flex-1 py-2.5 ${tab === t.id ? "border-b-2 border-accent text-ink-100" : "text-ink-dim"}`}
               >
                 {t.label}
@@ -454,6 +467,7 @@ export function ProjectWorkspace({
               <PendingChangeCard
                 message={pendingChange.message}
                 changes={pendingChange.changes}
+                originalFiles={files}
                 onAccept={handleAcceptChange}
                 onReject={handleRejectChange}
               />

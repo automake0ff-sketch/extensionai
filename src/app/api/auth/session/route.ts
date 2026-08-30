@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase/admin";
 import { SESSION_COOKIE_NAME } from "@/lib/firebase/session";
+import { track } from "@/lib/analytics";
 
 const SESSION_EXPIRES_IN_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
         stripeSubscriptionId: null,
         createdAt: new Date().toISOString(),
       });
+      track("signup", decoded.uid, {});
     }
 
     const response = NextResponse.json({ ok: true });

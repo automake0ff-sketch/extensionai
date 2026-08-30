@@ -4,6 +4,7 @@ import { getSession } from "@/lib/firebase/session";
 import { exchangeCodeForToken, getAuthenticatedGitHubUser } from "@/lib/github/client";
 import { saveGithubConnection } from "@/lib/firebase/firestore";
 import { encryptSecret } from "@/lib/crypto";
+import { track } from "@/lib/analytics";
 
 const STATE_COOKIE = "github_oauth_state";
 
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
       githubLogin: githubUser.login,
       encryptedAccessToken: encryptSecret(accessToken),
     });
+    track("github_connected", session.uid, {});
 
     const response = NextResponse.redirect(new URL("/settings?githubConnected=true", request.url));
     response.cookies.delete(STATE_COOKIE);

@@ -67,6 +67,17 @@
   unsigned or mis-signed request is rejected with 400 before any Firestore
   write happens. Plan changes are driven entirely by verified webhook
   events, never by a value the client sends directly.
+- **Bounded project/file sizes.** `lib/limits.ts` caps files per project,
+  bytes per file, and total project bytes, checked both after AI generation
+  and before a chat-proposed change is accepted — so neither a runaway model
+  response nor a manual paste can grow a project (and therefore a ZIP, a
+  Firestore document, or a GitHub commit) without bound.
+- **Analytics endpoint is allow-listed, not open.** `POST
+  /api/analytics/track` — the only analytics path reachable from client code
+  — accepts exactly one event name (`preview_opened`) and no free-form
+  properties beyond a project ID; every other event is only ever recorded
+  server-side, where the action being measured already happened under an
+  authenticated, ownership-checked request.
 
 ## Why not Firestore rules for this?
 

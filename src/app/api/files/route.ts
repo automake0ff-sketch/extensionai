@@ -3,9 +3,11 @@ import { getSession } from "@/lib/firebase/session";
 import {
   getOwnedProject,
   getProjectFileByPath,
+  getProjectFiles,
   snapshotFileVersion,
   upsertProjectFile,
 } from "@/lib/firebase/firestore";
+import { assertChangesWithinProjectLimits, ProjectLimitError } from "@/lib/limits";
 
 /** PATCH: manually edit a single file's content from the editor (spec section 9). */
 export async function PATCH(request: Request) {
@@ -28,7 +30,17 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Project not found." }, { status: 404 });
   }
 
-  const existing = await getProjectFileByPath(projectId, path);
+  const currentFiles = await getProjectFiles(projectId);
+  try {
+    assertChangesWithinProjectLimits(currentFiles, [{ path, action: "update", content }]);
+  } catch (err) {
+    if (err instanceof ProjectLimitError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+
+  const existing = currentFiles.find((f) => f.path === path) ?? (await getProjectFileByPath(projectId, path));
   if (existing) {
     await snapshotFileVersion(projectId, path, existing.content, "user");
   }

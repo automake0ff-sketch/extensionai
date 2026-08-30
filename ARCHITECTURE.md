@@ -45,6 +45,7 @@ src/
       billing/checkout/route.ts     Creates a Stripe Checkout session
       billing/portal/route.ts        Creates a Stripe Billing Portal session
       billing/webhook/route.ts       Reconciles subscription state from Stripe events
+      analytics/track/route.ts       Client-triggerable analytics events (small allow-list)
   lib/
     ai/                          Provider-agnostic AI layer (see below)
     firebase/
@@ -56,6 +57,8 @@ src/
     github/client.ts               Minimal GitHub OAuth + REST client (no SDK dependency)
     stripe/client.ts                Stripe SDK singleton + plan/price mapping
     crypto.ts                       AES-256-GCM encrypt/decrypt for secrets stored in Firestore
+    limits.ts                       Project/file size limit enforcement
+    analytics/index.ts              Event tracking (writes to analytics_events in Firestore)
     validator/                    Manifest + security static checks
     zip/                          ZIP building
     usage/                        Credit accounting
@@ -285,6 +288,53 @@ Like GitHub export, this hasn't been run against a live Stripe account from
 this environment — the flow is complete and internally consistent, but treat
 it as a strong starting point to validate against a real (test-mode) Stripe
 account rather than something already proven in production.
+
+## Project size limits
+
+Spec section 22: `lib/limits.ts` enforces 60 files/project, 300 KB/file, and
+3 MB/project total. Checked in three places:
+
+- `assertWithinProjectLimits()` after a full `generateExtension()` call,
+  before the files are written.
+- `assertChangesWithinProjectLimits()` when a Modifier proposal is created
+  (`/api/modify`) — so an over-limit change is rejected before the person
+  even sees an Accept/Reject card — and again, defensively, in
+  `/api/modify/apply` right before the change is actually applied.
+- `/api/files` (manual editor saves) — a person pasting a huge blob into the
+  code editor hits the same per-file/per-project ceiling.
+
+A violation raises `ProjectLimitError` with a specific, human-readable
+message (which file, what size, what the limit is) — not a generic failure.
+
+## Analytics
+
+`lib/analytics/index.ts` implements every event name from spec section 24
+(`signup`, `project_created`, `generation_started`/`completed`/`failed`,
+`preview_opened`, `download_clicked`, `github_connected`,
+`upgrade_clicked`). `track(event, uid, properties)` is fire-and-forget and
+writes to an `analytics_events` Firestore collection — no third-party
+analytics provider is connected yet, but the instrumentation itself is real:
+every call site listed above actually fires, with minimal properties (IDs,
+counts, plan names — never prompt text or file contents, per the same spec
+section). Swapping in a real provider later means changing `track()`'s
+implementation once, not re-instrumenting every route.
+
+Most events fire server-side, where the action already happens (project
+creation, a generation call, a download). `preview_opened` is the one
+event only observable client-side (switching tabs in the editor), so it
+goes through `POST /api/analytics/track` — deliberately restricted to a
+fixed allow-list of event names, so it can't be used to log arbitrary data.
+
+## Line-level diff view
+
+The Accept/Reject card (`components/editor/pending-change-card.tsx`) shows
+the file-level list of changes by default, but each file is expandable into
+an actual line diff (`components/editor/file-diff-view.tsx`, using the
+`diff` package's `diffLines`) — added lines in green, removed lines in red,
+unchanged context in between. `create`/`delete` actions render as
+all-added/all-removed since there's no "before"/"after" to diff. Large
+diffs are capped at 300 rendered lines with a "N more lines not shown" note,
+to keep a chat-panel-sized card usable.
 
 ## Security model
 

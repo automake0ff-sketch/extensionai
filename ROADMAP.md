@@ -76,19 +76,36 @@ Status of the priority order from the product spec (section 25).
       counter (`lib/firebase/ratelimit.ts`) that works correctly across
       serverless instances.
 - [x] **GitHub export** and **Stripe billing** — see P1/P2 above.
+- [x] **Project/file size limits** (`lib/limits.ts`): 60 files/project,
+      300 KB/file, 3 MB/project total. Enforced after generation
+      (`/api/generate`), before a proposed change can be accepted
+      (`/api/modify` at proposal time, and again defensively in
+      `/api/modify/apply`), and on manual editor saves (`/api/files`).
+      Violations return a specific, human-readable 400 rather than a vague
+      failure.
+- [x] **Analytics events wired up** (`lib/analytics/index.ts`), using
+      exactly the event names from spec section 24: `signup`,
+      `project_created`, `generation_started`/`completed`/`failed`,
+      `preview_opened`, `download_clicked`, `github_connected`,
+      `upgrade_clicked`. No provider (PostHog/Segment/etc.) is connected yet
+      — events are written to an `analytics_events` Firestore collection, so
+      the instrumentation is real and queryable today, and swapping in a
+      real provider later is a one-file change (`track()`'s implementation),
+      not a re-instrumentation of every call site. Per spec section 24,
+      properties are deliberately minimal (IDs, counts, plan names) — never
+      prompt text or file contents.
+- [x] **Line-level diff view for pending changes.** The Accept/Reject card
+      now lets you expand any changed file to see an actual added/removed
+      line diff (`components/editor/file-diff-view.tsx`, using the `diff`
+      package), not just the file-level create/update/delete list from
+      before. Large diffs are capped at 300 rendered lines to keep the UI
+      responsive.
 
 ## Smaller follow-ups worth doing next
 
-- A real line-level diff view for pending changes (today it's a file-level
-  create/update/delete list, which is enough to make an informed
-  Accept/Reject decision but doesn't show exactly what changed inside a file).
-- Project/file size limits.
-- Analytics events listed in the spec (`signup`, `project_created`,
-  `generation_started`, etc.) — the event *names* and where they'd fire are
-  clear from the code, but no analytics provider is wired in yet.
-- The rate limiter is a blunt fixed-window counter; a sliding-window or
-  token-bucket implementation would be smoother if usage patterns show it
-  matters.
+- Project/file size limits are enforced server-side but not surfaced
+  anywhere in the UI *before* someone hits them (e.g. a running byte-count
+  in the editor) — right now they only show up as an error message.
 - GitHub export and Stripe billing should be exercised against real (test
   mode / sandbox) accounts before shipping to real users — see the caveats
   under each in ARCHITECTURE.md and SECURITY.md.
@@ -96,3 +113,7 @@ Status of the priority order from the product spec (section 25).
   by a dedicated flow yet — the person would need to cancel and resubscribe,
   or this could route through the Billing Portal's own plan-switching UI if
   enabled on the Stripe side.
+- The rate limiter is a blunt fixed-window counter; a sliding-window or
+  token-bucket implementation would be smoother if usage patterns show it
+  matters.
+- No real analytics provider is connected — see above.

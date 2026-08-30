@@ -3,6 +3,7 @@ import { getSession } from "@/lib/firebase/session";
 import { buildExtensionZip, slugifyFilename } from "@/lib/zip/build";
 import { validateProject } from "@/lib/validator";
 import { getOwnedProject, getProjectFiles } from "@/lib/firebase/firestore";
+import { track } from "@/lib/analytics";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
   try {
     const buffer = await buildExtensionZip(project.name, files);
     const filename = `${slugifyFilename(project.name)}.zip`;
+    track("download_clicked", session.uid, { projectId, forced: force });
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,

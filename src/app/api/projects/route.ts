@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/firebase/session";
 import { createProject, listProjects } from "@/lib/firebase/firestore";
+import { track } from "@/lib/analytics";
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
 
   try {
     const project = await createProject(session.uid, { name, description });
+    track("project_created", session.uid, { projectId: project.id });
     return NextResponse.json({ project });
   } catch {
     return NextResponse.json({ error: "Could not create the project." }, { status: 500 });

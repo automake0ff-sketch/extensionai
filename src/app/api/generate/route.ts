@@ -4,6 +4,8 @@ import { AiResponseValidationError, generateExtension } from "@/lib/ai/extension
 import { getUsage, recordUsage } from "@/lib/usage";
 import { toFriendlyError } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/firebase/ratelimit";
+import { assertWithinProjectLimits, ProjectLimitError } from "@/lib/limits";
+import { track } from "@/lib/analytics";
 import {
   addChatMessage,
   completeGeneration,
@@ -61,9 +63,12 @@ export async function POST(request: Request) {
 
   const model = process.env.AI_MODEL ?? "claude-sonnet-4-6";
   const generationId = await createGeneration(projectId, session.uid, "generate", prompt, model);
+  track("generation_started", session.uid, { projectId, kind: "generate" });
 
   try {
     const { result, tokensUsed, model: usedModel } = await generateExtension(prompt);
+
+    assertWithinProjectLimits(result.files);
 
     await replaceProjectFiles(projectId, result.files);
 
@@ -80,6 +85,7 @@ export async function POST(request: Request) {
     });
 
     await recordUsage(session.uid, GENERATION_COST);
+    track("generation_completed", session.uid, { projectId, kind: "generate", fileCount: result.files.length });
 
     await addChatMessage(projectId, session.uid, "user", prompt);
     await addChatMessage(
@@ -98,16 +104,20 @@ export async function POST(request: Request) {
       status: "error",
       errorMessage: err instanceof Error ? err.message : String(err),
     });
+    track("generation_failed", session.uid, { projectId, kind: "generate" });
 
     const isValidation = err instanceof AiResponseValidationError;
+    const isLimit = err instanceof ProjectLimitError;
     return NextResponse.json(
-      toFriendlyError(
-        err,
-        isValidation
-          ? "The AI produced an invalid extension structure. Please try rephrasing your request."
-          : "We couldn't generate your extension. Please try again."
-      ),
-      { status: 500 }
+      isLimit
+        ? { error: err.message }
+        : toFriendlyError(
+            err,
+            isValidation
+              ? "The AI produced an invalid extension structure. Please try rephrasing your request."
+              : "We couldn't generate your extension. Please try again."
+          ),
+      { status: isLimit ? 400 : 500 }
     );
   }
 }

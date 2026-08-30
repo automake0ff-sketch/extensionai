@@ -3,6 +3,7 @@ import { getSession } from "@/lib/firebase/session";
 import { getProfile, updateProfileBilling } from "@/lib/firebase/firestore";
 import { getStripeClient, priceIdForPlan, type BillablePlan } from "@/lib/stripe/client";
 import { toFriendlyError } from "@/lib/errors";
+import { track } from "@/lib/analytics";
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -46,6 +47,8 @@ export async function POST(request: Request) {
     if (!checkoutSession.url) {
       throw new Error("Stripe did not return a Checkout URL.");
     }
+
+    track("upgrade_clicked", session.uid, { plan });
 
     return NextResponse.json({ url: checkoutSession.url });
   } catch (err) {

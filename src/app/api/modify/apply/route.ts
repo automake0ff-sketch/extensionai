@@ -12,6 +12,7 @@ import {
   updateProject,
   upsertProjectFile,
 } from "@/lib/firebase/firestore";
+import { assertChangesWithinProjectLimits, ProjectLimitError } from "@/lib/limits";
 
 /** The person clicked "Accept" on a proposed change — apply it now. */
 export async function POST(request: Request) {
@@ -42,8 +43,11 @@ export async function POST(request: Request) {
   }
 
   try {
+    const currentFiles = await getProjectFiles(projectId);
+    assertChangesWithinProjectLimits(currentFiles, pending.pendingChanges);
+
     for (const change of pending.pendingChanges) {
-      const existing = await getProjectFileByPath(projectId, change.path);
+      const existing = currentFiles.find((f) => f.path === change.path) ?? (await getProjectFileByPath(projectId, change.path));
 
       // Snapshot the previous version before mutating (spec section 11/12).
       if (existing) {
@@ -63,7 +67,10 @@ export async function POST(request: Request) {
 
     const files = await getProjectFiles(projectId);
     return NextResponse.json({ files });
-  } catch {
+  } catch (err) {
+    if (err instanceof ProjectLimitError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     return NextResponse.json({ error: "We couldn't apply that change. Please try again." }, { status: 500 });
   }
 }

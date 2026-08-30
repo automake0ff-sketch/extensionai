@@ -4,6 +4,8 @@ import { AiResponseValidationError, modifyExtension } from "@/lib/ai/extension";
 import { getUsage, recordUsage } from "@/lib/usage";
 import { toFriendlyError } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/firebase/ratelimit";
+import { assertChangesWithinProjectLimits, ProjectLimitError } from "@/lib/limits";
+import { track } from "@/lib/analytics";
 import {
   addChatMessage,
   completeGeneration,
@@ -64,6 +66,7 @@ export async function POST(request: Request) {
 
   const model = process.env.AI_MODEL ?? "claude-sonnet-4-6";
   const generationId = await createGeneration(projectId, session.uid, "modify", message, model);
+  track("generation_started", session.uid, { projectId, kind: "modify" });
 
   await addChatMessage(projectId, session.uid, "user", message);
 
@@ -76,6 +79,11 @@ export async function POST(request: Request) {
         .filter((m) => m.role === "user" || m.role === "assistant"),
     });
 
+    // Check before offering Accept/Reject, so a change that would blow the
+    // project size limit is surfaced immediately rather than failing later
+    // at /api/modify/apply once the person has already clicked Accept.
+    assertChangesWithinProjectLimits(files, result.changes);
+
     await markGenerationPendingReview(projectId, generationId, {
       tokensUsed,
       model: usedModel,
@@ -86,6 +94,7 @@ export async function POST(request: Request) {
     // Credit is spent when the AI call happens, not when the person decides
     // whether to keep it — the work (and the tokens) already happened.
     await recordUsage(session.uid, 1);
+    track("generation_completed", session.uid, { projectId, kind: "modify", fileCount: result.changes.length });
 
     return NextResponse.json({ generationId, result });
   } catch (err) {
@@ -93,6 +102,14 @@ export async function POST(request: Request) {
       status: "error",
       errorMessage: err instanceof Error ? err.message : String(err),
     });
+    track("generation_failed", session.uid, { projectId, kind: "modify" });
+
+    if (err instanceof ProjectLimitError) {
+      // The AI call succeeded and the credit is still spent — only the
+      // resulting change was rejected for being too large.
+      await recordUsage(session.uid, 1);
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
 
     const isValidation = err instanceof AiResponseValidationError;
     return NextResponse.json(
