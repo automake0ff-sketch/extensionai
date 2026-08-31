@@ -11,6 +11,21 @@ export const MAX_FILES_PER_PROJECT = 60;
 export const MAX_FILE_SIZE_BYTES = 300 * 1024; // 300 KB
 export const MAX_PROJECT_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB total
 
+/** Pure summary used by the editor's size indicator — no throwing, just numbers. */
+export function getProjectSizeSummary(files: { content: string }[]): {
+  fileCount: number;
+  totalBytes: number;
+  maxFiles: number;
+  maxTotalBytes: number;
+} {
+  return {
+    fileCount: files.length,
+    totalBytes: files.reduce((sum, f) => sum + byteLength(f.content), 0),
+    maxFiles: MAX_FILES_PER_PROJECT,
+    maxTotalBytes: MAX_PROJECT_SIZE_BYTES,
+  };
+}
+
 export class ProjectLimitError extends Error {
   constructor(message: string) {
     super(message);
@@ -19,7 +34,10 @@ export class ProjectLimitError extends Error {
 }
 
 function byteLength(content: string): number {
-  return Buffer.byteLength(content, "utf8");
+  // TextEncoder (not Buffer) so this module can be imported from client
+  // components too, e.g. to show a live size indicator in the editor —
+  // Buffer isn't available in the browser bundle without a Node polyfill.
+  return new TextEncoder().encode(content).length;
 }
 
 /**

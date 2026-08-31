@@ -3,6 +3,10 @@
 > **Note:** this project originally shipped on Supabase (Postgres + Supabase
 > Auth) and was migrated to Firebase (Firestore + Firebase Auth). The P0/P1/P2
 > status below reflects the current Firebase-based implementation.
+>
+> **Looking for launch readiness, not feature status?** See
+> [LAUNCH_CHECKLIST.md](./LAUNCH_CHECKLIST.md) — it separates what's
+> code-complete from what needs real external accounts and legal review.
 
 Status of the priority order from the product spec (section 25).
 
@@ -100,15 +104,25 @@ Status of the priority order from the product spec (section 25).
       package), not just the file-level create/update/delete list from
       before. Large diffs are capped at 300 rendered lines to keep the UI
       responsive.
+- [x] **Project size limits surfaced in the UI**, not just enforced
+      server-side — a live `N/60 files · N KB` indicator in the workspace
+      top bar (`components/editor/project-size-indicator.tsx`), turning
+      amber past 80% of either limit.
+- [x] **App-wide security headers** (CSP, X-Frame-Options, etc.) added in
+      `next.config.ts` — closes the gap previously tracked in SECURITY.md.
+- [x] **Friendly error/404 pages** (`app/not-found.tsx`, `app/error.tsx`,
+      `app/global-error.tsx`) — spec section 23's "no raw stack traces"
+      principle now applies to page-level errors, not just API responses.
+- [x] **Terms of Service and Privacy Policy pages** (`/terms`, `/privacy`) —
+      real, working routes with content accurate to what this codebase
+      actually stores, clearly marked as drafts needing a lawyer's review
+      before launch (see LAUNCH_CHECKLIST.md).
 
 ## Smaller follow-ups worth doing next
 
-- Project/file size limits are enforced server-side but not surfaced
-  anywhere in the UI *before* someone hits them (e.g. a running byte-count
-  in the editor) — right now they only show up as an error message.
 - GitHub export and Stripe billing should be exercised against real (test
-  mode / sandbox) accounts before shipping to real users — see the caveats
-  under each in ARCHITECTURE.md and SECURITY.md.
+  mode / sandbox) accounts before shipping to real users — see
+  LAUNCH_CHECKLIST.md.
 - Stripe plan changes mid-subscription (upgrading Pro → Pro+) aren't handled
   by a dedicated flow yet — the person would need to cancel and resubscribe,
   or this could route through the Billing Portal's own plan-switching UI if
@@ -116,4 +130,8 @@ Status of the priority order from the product spec (section 25).
 - The rate limiter is a blunt fixed-window counter; a sliding-window or
   token-bucket implementation would be smoother if usage patterns show it
   matters.
-- No real analytics provider is connected — see above.
+- No real analytics provider is connected — events are captured in Firestore
+  but nothing visualizes them yet.
+- No account/project deletion flow — see LAUNCH_CHECKLIST.md.
+- No error-tracking service wired in — `error.tsx`/`global-error.tsx` have a
+  marked hook point for adding one.

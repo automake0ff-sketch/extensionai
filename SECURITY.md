@@ -78,6 +78,14 @@
   properties beyond a project ID; every other event is only ever recorded
   server-side, where the action being measured already happened under an
   authenticated, ownership-checked request.
+- **App-wide security headers** (`next.config.ts`): a Content-Security-Policy
+  scoped to `'self'` plus the specific third-party APIs this app calls
+  (Anthropic, GitHub, Stripe, Firebase), `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, a restrictive `Permissions-Policy`, and
+  `Referrer-Policy: strict-origin-when-cross-origin`. Generated extension
+  code never executes on ExtenAI's own origin — it only ever runs inside a
+  sandboxed `<iframe>` in the preview panel — so this CSP only has to cover
+  the app shell itself, not arbitrary AI-generated code.
 
 ## Why not Firestore rules for this?
 
@@ -100,8 +108,6 @@ than splitting the logic between rules and route handlers.
   blocked by `getSession()` returning 401 first, but a determined attacker
   with many free accounts isn't meaningfully slowed down yet.
 - File size / project size limits are not yet enforced server-side.
-- CSP headers for the ExtenAI app itself (not the generated extensions) are
-  not yet configured in `next.config.ts`.
 - The Firestore composite indexes in `firestore.indexes.json` need to be
   deployed (or created manually) before `listProjects` and file-version
   history queries will work — see SETUP.md step 6. Until then those specific
@@ -116,6 +122,14 @@ than splitting the logic between rules and route handlers.
   `@google-cloud/storage`). Not exploitable through anything this app does
   with `firebase-admin` (Firestore/Auth only, no Cloud Storage usage), but
   worth revisiting on a `firebase-admin` major-version upgrade.
+- No error-tracking service is wired in yet — `error.tsx`/`global-error.tsx`
+  have a marked hook point (a `console.error` call) for adding one.
+- There's no account/project deletion flow yet, which is worth having both
+  for UX and for privacy-law compliance — see LAUNCH_CHECKLIST.md.
+
+See **LAUNCH_CHECKLIST.md** for the full picture of what's code-complete
+versus what requires real external accounts, a domain, and legal review
+before this goes live.
 
 ## Reporting a vulnerability
 

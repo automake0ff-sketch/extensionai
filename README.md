@@ -43,3 +43,6 @@ npm run build        # production build
 - [ENVIRONMENT.md](./ENVIRONMENT.md) — environment variables
 - [SECURITY.md](./SECURITY.md) — security model and constraints
 - [ROADMAP.md](./ROADMAP.md) — what's built, what's stubbed, what's next
+- [LAUNCH_CHECKLIST.md](./LAUNCH_CHECKLIST.md) — what's code-complete vs.
+  what still needs a real Firebase/Stripe/GitHub setup and legal review
+  before you launch to real users

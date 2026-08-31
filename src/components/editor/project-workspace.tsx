@@ -24,6 +24,7 @@ import { TestPlanPanel } from "./test-plan-panel";
 import { FileHistoryPanel } from "./file-history-panel";
 import { PendingChangeCard } from "./pending-change-card";
 import { GithubExportModal } from "./github-export-modal";
+import { ProjectSizeIndicator } from "./project-size-indicator";
 
 type Tab = "preview" | "validate" | "tests" | "store";
 
@@ -272,6 +273,7 @@ export function ProjectWorkspace({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <ProjectSizeIndicator files={files} />
           <button
             onClick={handleValidate}
             className="flex items-center gap-1.5 rounded-full border border-ink-line px-3 py-1.5 text-xs hover:bg-ink-raised"

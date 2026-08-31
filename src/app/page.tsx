@@ -256,7 +256,11 @@ export default function LandingPage() {
       </section>
 
       <footer className="border-t border-ink-line py-8 text-center text-xs text-ink-dim">
-        ExtenAI — generated extensions load via chrome://extensions in Developer mode.
+        <p>ExtenAI — generated extensions load via chrome://extensions in Developer mode.</p>
+        <p className="mt-2 flex items-center justify-center gap-4">
+          <Link href="/terms" className="hover:text-ink-100">Terms</Link>
+          <Link href="/privacy" className="hover:text-ink-100">Privacy</Link>
+        </p>
       </footer>
     </div>
   );

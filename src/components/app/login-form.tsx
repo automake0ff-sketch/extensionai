@@ -165,6 +165,14 @@ export function LoginForm() {
               {mode === "sign_in" ? "Create an account" : "Log in"}
             </button>
           </p>
+
+          {mode === "sign_up" && (
+            <p className="mt-3 text-center text-xs text-ink-dim">
+              By creating an account you agree to our{" "}
+              <Link href="/terms" className="text-accent hover:underline">Terms</Link> and{" "}
+              <Link href="/privacy" className="text-accent hover:underline">Privacy Policy</Link>.
+            </p>
+          )}
         </div>
       </div>
     </div>
