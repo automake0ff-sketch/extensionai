@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/firebase/session";
 import { AiResponseValidationError, modifyExtension } from "@/lib/ai/extension";
+import { DEFAULT_AI_MODEL } from "@/lib/ai";
 import { getUsage, recordUsage } from "@/lib/usage";
 import { toFriendlyError } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/firebase/ratelimit";
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
   const files = await getProjectFiles(projectId);
   const history = await listChatMessages(projectId, MAX_HISTORY_MESSAGES);
 
-  const model = process.env.AI_MODEL ?? "claude-sonnet-4-6";
+  const model = process.env.AI_MODEL ?? DEFAULT_AI_MODEL;
   const generationId = await createGeneration(projectId, session.uid, "modify", message, model);
   track("generation_started", session.uid, { projectId, kind: "modify" });
 

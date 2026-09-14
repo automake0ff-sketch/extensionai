@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AiCompletionRequest, AiCompletionResult, AiProvider } from "../provider";
+import { DEFAULT_AI_MODEL } from "../provider";
 
 /**
  * Anthropic implementation of AiProvider. Reads its API key from AI_API_KEY
@@ -10,7 +11,7 @@ export class AnthropicProvider implements AiProvider {
   private client: Anthropic;
   private model: string;
 
-  constructor(apiKey: string, model = "claude-sonnet-4-6") {
+  constructor(apiKey: string, model = DEFAULT_AI_MODEL) {
     this.client = new Anthropic({ apiKey });
     this.model = model;
   }

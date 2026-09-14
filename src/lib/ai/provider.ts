@@ -3,6 +3,13 @@
 // this interface, never on a specific vendor SDK. Swapping models/providers
 // means adding a new file here and pointing AI_PROVIDER at it.
 
+/**
+ * Single source of truth for the default model string, used when AI_MODEL
+ * isn't set. Confirm this matches a model your Anthropic account actually
+ * has access to before launch — see LAUNCH_CHECKLIST.md.
+ */
+export const DEFAULT_AI_MODEL = "claude-sonnet-4-6";
+
 export interface AiMessage {
   role: "user" | "assistant";
   content: string;

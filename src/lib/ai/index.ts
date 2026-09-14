@@ -32,3 +32,4 @@ export function getAiProvider(): AiProvider {
 }
 
 export type { AiProvider, AiCompletionRequest, AiCompletionResult, AiMessage } from "./provider";
+export { DEFAULT_AI_MODEL } from "./provider";

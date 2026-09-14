@@ -70,6 +70,28 @@ Status of the priority order from the product spec (section 25).
 
 ## Recently closed follow-ups
 
+- [x] **Code audit fixes (post-launch-readiness-pass):**
+  - `.env.example` was silently excluded from every commit by the `.env*`
+    gitignore pattern despite every doc telling people to copy it — added
+    `!.env.example` to `.gitignore` and committed the file for real.
+  - `/api/analyze` (spec section 33's "Reviewer" AI role) was fully built
+    but never called from any UI — wired it into the editor's Health tab
+    as an on-demand "Run AI review" button
+    (`components/editor/ai-review-panel.tsx`), and gave it the same credit
+    check / rate limit / generation logging the other AI routes have (it
+    had none, since nothing called it yet).
+  - Centralized the previously-hardcoded `"claude-sonnet-4-6"` fallback
+    (repeated in 4 files) into a single `DEFAULT_AI_MODEL` constant
+    (`lib/ai/provider.ts`).
+  - Removed the unused `clsx` dependency.
+  - Fixed a rough edge in Accept/Reject: if `/api/modify/apply` failed
+    (e.g. the size-limit check), the client discarded the proposed change
+    from its local state even though it was still recoverable server-side
+    — now it's only cleared on success, so a failed accept can be retried
+    or explicitly rejected instead of silently disappearing.
+  - Ran `npm audit fix` to clear newly-flagged high-severity transitive
+    advisories (`js-yaml`, `sharp`, pulled in via Next.js/firebase-admin).
+
 - [x] **ZIP export now blocks on validation errors.** `GET /api/export`
       runs `validateProject()` first; if there are errors it returns 409
       with `{ requiresConfirmation: true, validation }` instead of the file,

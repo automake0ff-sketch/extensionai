@@ -25,6 +25,7 @@ import { FileHistoryPanel } from "./file-history-panel";
 import { PendingChangeCard } from "./pending-change-card";
 import { GithubExportModal } from "./github-export-modal";
 import { ProjectSizeIndicator } from "./project-size-indicator";
+import { AiReviewPanel } from "./ai-review-panel";
 
 type Tab = "preview" | "validate" | "tests" | "store";
 
@@ -168,10 +169,13 @@ export function ProjectWorkspace({
           created_at: new Date().toISOString(),
         },
       ]);
+      // Only clear on success — on failure (e.g. the size-limit check in
+      // /api/modify/apply), the proposal is still stored server-side with
+      // status "pending_review", so keep it visible for a retry or an
+      // explicit Reject instead of silently discarding it.
+      setPendingChange(null);
     } catch (err) {
       setChatError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setPendingChange(null);
     }
   }
 
@@ -434,7 +438,12 @@ export function ProjectWorkspace({
           <div className="flex-1 overflow-y-auto p-4">
             {tab === "preview" && <ExtensionPreview popupFile={popupFile} files={files} manifestFile={manifestFile} />}
             {tab === "validate" && (
-              <ValidationPanel validation={validation} validating={validating} onRevalidate={handleValidate} />
+              <ValidationPanel
+                projectId={project.id}
+                validation={validation}
+                validating={validating}
+                onRevalidate={handleValidate}
+              />
             )}
             {tab === "tests" && <TestPlanPanel projectId={project.id} />}
             {tab === "store" && <StorePrepPanel projectId={project.id} />}
@@ -503,10 +512,12 @@ export function ProjectWorkspace({
 }
 
 function ValidationPanel({
+  projectId,
   validation,
   validating,
   onRevalidate,
 }: {
+  projectId: string;
   validation: ValidationResult | null;
   validating: boolean;
   onRevalidate: () => void;
@@ -526,6 +537,7 @@ function ValidationPanel({
         <button onClick={onRevalidate} className="mt-3 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-white">
           Run validation
         </button>
+        <AiReviewPanel projectId={projectId} />
       </div>
     );
   }
@@ -556,6 +568,7 @@ function ValidationPanel({
       <button onClick={onRevalidate} className="mt-2 text-xs text-accent hover:underline">
         Re-run validation
       </button>
+      <AiReviewPanel projectId={projectId} />
     </div>
   );
 }
