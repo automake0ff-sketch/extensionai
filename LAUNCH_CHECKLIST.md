@@ -4,6 +4,16 @@ A frank assessment of what's actually done vs. what still needs a human to
 do something outside this codebase before ExtenAI can take real users and
 real money. Organized so you can tell at a glance what's blocking launch.
 
+> **Update — full code audit completed (commit `52aa871`).** A line-by-line
+> audit of the entire codebase (excluding anything requiring live Firebase
+> credentials) found and fixed 6 real issues, the most notable being that
+> `.env.example` had silently never been committed to git since day one due
+> to a `.gitignore` bug, and that a whole AI feature (the "Reviewer" role)
+> was fully built but unreachable from the UI. See ROADMAP.md's "Recently
+> closed follow-ups" for the full list. **Nothing in this update changes the
+> bottom line below** — the code was already correct where it was reachable;
+> the audit closed gaps in reach and repo hygiene, not in correctness.
+
 ## ✅ Code-complete (verified: typecheck, lint, 25 unit tests, production
 build, and a local smoke test all pass as of this commit)
 
@@ -17,6 +27,8 @@ Beyond that golden path:
 - Version history with restore, for both AI and manual edits
 - GitHub export (OAuth connect, single-commit push to a new repo)
 - Stripe billing (Checkout, Billing Portal, webhook-driven plan sync)
+- An on-demand AI-driven permissions/security review (spec section 33's
+  "Reviewer" role), alongside the free static validator
 - Rate limiting on the AI endpoints; project/file size limits enforced
   server-side, with a live indicator in the editor
 - Security headers (CSP, X-Frame-Options, etc.), Firestore rules that deny
