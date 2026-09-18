@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE_NAME } from "@/lib/firebase/session";
+import { SESSION_COOKIE_NAME } from "@/lib/firebase/session-cookie";
 
 /**
  * Fast, edge-friendly redirect based on cookie *presence* only. This does
@@ -9,6 +9,14 @@ import { SESSION_COOKIE_NAME } from "@/lib/firebase/session";
  * (src/lib/firebase/session.ts) in Server Components and Route Handlers, so
  * a forged/expired cookie can get past this redirect but never past an
  * actual data access.
+ *
+ * CRITICAL: this file must only ever import from "./session-cookie" for the
+ * constant below, never from "./session" (which imports "./admin" i.e. the
+ * full firebase-admin SDK). One of firebase-admin's transitive dependencies
+ * does a require() of an ES module, which fails at runtime in whatever
+ * restricted runtime this proxy executes under — and since the proxy runs
+ * on every request, that failure takes down the entire app, public pages
+ * included. This bit us once in production; don't reintroduce it.
  */
 export function proxy(request: NextRequest) {
   const hasSession = request.cookies.has(SESSION_COOKIE_NAME);

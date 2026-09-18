@@ -100,6 +100,22 @@ API routes (for everything else). The flow:
    may not run under. The actual security boundary is step 4, which runs on
    every request that touches data, so a forged/expired cookie can skip the
    convenience redirect but can never pass a real ownership check.
+
+   **This is more than a theoretical runtime concern** — it broke production
+   once. `SESSION_COOKIE_NAME` originally lived in `session.ts` alongside
+   `getSession()`, and `proxy.ts` imported it from there. Since `session.ts`
+   also imports `./admin` (the full Firebase Admin SDK) at module scope,
+   that one constant import was enough to bundle all of `firebase-admin`
+   into the proxy — including a transitive dependency (`jwks-rsa` ->
+   `jose`) that does a `require()` of an ES module, which throws
+   `ERR_REQUIRE_ESM` in the proxy's runtime. Because the proxy runs on
+   *every* request, this took down the entire app — including the public
+   landing page — with a 500. The fix: `SESSION_COOKIE_NAME` now lives in
+   its own dependency-free file, `src/lib/firebase/session-cookie.ts`, which
+   `proxy.ts` imports directly. `session.ts` re-exports the same constant
+   for every other file's convenience, but `proxy.ts` must **never** import
+   from `session.ts` (or anything else that touches `./admin`) — see the
+   comment at the top of `proxy.ts` for the same warning in place.
 6. Sign-out clears the client Firebase Auth session and calls
    `DELETE /api/auth/session` to drop the cookie.
 

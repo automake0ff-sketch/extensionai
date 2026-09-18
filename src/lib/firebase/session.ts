@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { adminAuth } from "./admin";
+import { SESSION_COOKIE_NAME } from "./session-cookie";
 
-export const SESSION_COOKIE_NAME = "__session";
+export { SESSION_COOKIE_NAME };
 
 export interface SessionUser {
   uid: string;

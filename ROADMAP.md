@@ -70,6 +70,21 @@ Status of the priority order from the product spec (section 25).
 
 ## Recently closed follow-ups
 
+- [x] **Fixed a real production outage: every page 500'd on Vercel,
+      including the public landing page.** `src/proxy.ts` (runs on every
+      request) imported `SESSION_COOKIE_NAME` from `lib/firebase/session.ts`,
+      which also imports the full Firebase Admin SDK at module scope. That
+      pulled `firebase-admin` — and its `jwks-rsa` → `jose` dependency chain,
+      which does a `require()` of an ES module — into the proxy's bundle,
+      throwing `ERR_REQUIRE_ESM` on every single request. Fix: the constant
+      now lives in a dependency-free `lib/firebase/session-cookie.ts` that
+      `proxy.ts` imports directly, never through `session.ts`. Verified by
+      inspecting the built middleware chunks directly (zero references to
+      `firebase-admin`/`jwks-rsa`/`jose`) and a full local smoke test,
+      including a real Firebase project's credentials. See
+      ARCHITECTURE.md's auth-model section for the full writeup and the
+      warning comments left in both files so this doesn't regress.
+
 - [x] **OpenRouter as a second AI provider** (`lib/ai/providers/openrouter.ts`,
       `AI_PROVIDER=openrouter`) — lets ExtenAI run on a free-tier model
       instead of requiring paid Anthropic credits. Structurally verified
