@@ -19,6 +19,7 @@ Environment Variables). See `.env.example` for the canonical list.
 | `AI_PROVIDER` | Yes | No | Selects the implementation in `lib/ai/providers/`. Currently only `"anthropic"`. |
 | `AI_API_KEY` | Yes | No | Secret key for the configured provider. |
 | `AI_MODEL` | No | No | Overrides the provider's default model string. |
+| `ANTHROPIC_WORKSPACE_ID` | No — only if `AI_API_KEY` is an org-level (not workspace-scoped) key | No | Anthropic rejects org-level keys with a 400 error unless this header is present. Most keys don't need it. |
 | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | No — enables GitHub *export* (create repo/commit) if set | No | From a GitHub OAuth App (see SETUP.md). Not to be confused with "Sign in with GitHub", which is configured entirely in the Firebase console. |
 | `STRIPE_SECRET_KEY` | No — enables billing if set | **No** | Server-side Stripe API key. |
 | `STRIPE_WEBHOOK_SECRET` | No — required once billing is enabled | **No** | Verifies that `/api/billing/webhook` requests actually came from Stripe. |
