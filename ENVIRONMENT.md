@@ -16,7 +16,7 @@ Environment Variables). See `.env.example` for the canonical list.
 | `FIREBASE_CLIENT_EMAIL` | Yes | **No** | Admin SDK service account email. |
 | `FIREBASE_PRIVATE_KEY` | Yes | **No** | Admin SDK service account private key. Grants full read/write to Firestore and full control of Auth — treat like any other master secret. |
 | `APP_ENCRYPTION_KEY` | Yes, if GitHub export is enabled | **No** | AES-256-GCM key (32 bytes, base64) used to encrypt the GitHub access token before it's stored in Firestore. Generate with `openssl rand -base64 32`. |
-| `AI_PROVIDER` | Yes | No | Selects the implementation in `lib/ai/providers/`. Currently only `"anthropic"`. |
+| `AI_PROVIDER` | Yes | No | Selects the implementation in `lib/ai/providers/`: `"anthropic"` (default) or `"openrouter"` (for running on a free-tier model instead of paying for AI credits). |
 | `AI_API_KEY` | Yes | No | Secret key for the configured provider. |
 | `AI_MODEL` | No | No | Overrides the provider's default model string. |
 | `ANTHROPIC_WORKSPACE_ID` | No — only if `AI_API_KEY` is an org-level (not workspace-scoped) key | No | Anthropic rejects org-level keys with a 400 error unless this header is present. Most keys don't need it. |

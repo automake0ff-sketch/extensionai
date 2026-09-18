@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/firebase/session";
 import { generateTests } from "@/lib/ai/extension";
-import { DEFAULT_AI_MODEL } from "@/lib/ai";
+import { getDefaultModelForRecording } from "@/lib/ai";
 import { getUsage, recordUsage } from "@/lib/usage";
 import { toFriendlyError } from "@/lib/errors";
 import {
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   }
 
   const files = await getProjectFiles(projectId);
-  const model = process.env.AI_MODEL ?? DEFAULT_AI_MODEL;
+  const model = process.env.AI_MODEL ?? getDefaultModelForRecording();
   const generationId = await createGeneration(projectId, session.uid, "tests", "Generate test plan", model);
 
   try {

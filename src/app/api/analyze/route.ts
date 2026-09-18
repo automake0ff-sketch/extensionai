@@ -4,7 +4,7 @@ import { analyzeExtension } from "@/lib/ai/extension";
 import { toFriendlyError } from "@/lib/errors";
 import { getUsage, recordUsage } from "@/lib/usage";
 import { checkRateLimit } from "@/lib/firebase/ratelimit";
-import { DEFAULT_AI_MODEL } from "@/lib/ai";
+import { getDefaultModelForRecording } from "@/lib/ai";
 import {
   completeGeneration,
   createGeneration,
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     session.uid,
     "analyze",
     "Run AI review",
-    process.env.AI_MODEL ?? DEFAULT_AI_MODEL
+    process.env.AI_MODEL ?? getDefaultModelForRecording()
   );
 
   try {

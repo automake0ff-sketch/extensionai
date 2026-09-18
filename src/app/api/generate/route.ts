@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/firebase/session";
 import { AiResponseValidationError, generateExtension } from "@/lib/ai/extension";
-import { DEFAULT_AI_MODEL } from "@/lib/ai";
+import { getDefaultModelForRecording } from "@/lib/ai";
 import { getUsage, recordUsage } from "@/lib/usage";
 import { toFriendlyError } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/firebase/ratelimit";
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
   await updateProject(projectId, { status: "generating" });
 
-  const model = process.env.AI_MODEL ?? DEFAULT_AI_MODEL;
+  const model = process.env.AI_MODEL ?? getDefaultModelForRecording();
   const generationId = await createGeneration(projectId, session.uid, "generate", prompt, model);
   track("generation_started", session.uid, { projectId, kind: "generate" });
 

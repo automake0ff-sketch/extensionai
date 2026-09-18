@@ -70,6 +70,19 @@ Status of the priority order from the product spec (section 25).
 
 ## Recently closed follow-ups
 
+- [x] **OpenRouter as a second AI provider** (`lib/ai/providers/openrouter.ts`,
+      `AI_PROVIDER=openrouter`) — lets ExtenAI run on a free-tier model
+      instead of requiring paid Anthropic credits. Structurally verified
+      (unit-tested with a mocked fetch, typecheck/lint/build all pass with
+      it active) but — like GitHub export and Stripe — **not exercised
+      against the live OpenRouter API**, since `openrouter.ai` isn't
+      reachable from this development environment either. A free model is
+      generally less reliable at following the strict JSON-only instructions
+      every prompt in `lib/ai/prompts.ts` requires than a paid frontier
+      model — expect more `AiResponseValidationError`s in practice, which
+      surface as a friendly "please try rephrasing" rather than corrupting
+      any stored data.
+
 - [x] **Code audit fixes (post-launch-readiness-pass):**
   - `.env.example` was silently excluded from every commit by the `.env*`
     gitignore pattern despite every doc telling people to copy it — added

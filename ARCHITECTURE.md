@@ -115,8 +115,15 @@ database. The rest of the app calls four functions from `lib/ai/extension.ts`:
 - `generateTests(files)` — **Tester** prompt; never claims a test executed.
 
 `getAiProvider()` reads `AI_PROVIDER` / `AI_API_KEY` / `AI_MODEL` and returns
-an `AiProvider` (`lib/ai/provider.ts` is the interface;
-`lib/ai/providers/anthropic.ts` the only implementation). Every AI response
+an `AiProvider` (`lib/ai/provider.ts` is the interface). Two implementations
+exist: `lib/ai/providers/anthropic.ts` (default) and
+`lib/ai/providers/openrouter.ts` (`AI_PROVIDER=openrouter` — a plain-fetch
+client against OpenRouter's OpenAI-compatible API, for running on a
+free-tier model instead of paying for AI credits; see ENVIRONMENT.md for the
+tradeoffs). `getDefaultModelForRecording()` picks the right per-provider
+default model string to log on a `generations` doc when `AI_MODEL` isn't
+set, so that record never claims the wrong vendor's model regardless of
+which provider is actually configured. Every AI response
 is parsed through a Zod schema (`lib/ai/schemas.ts`) before it's written to
 Firestore.
 
