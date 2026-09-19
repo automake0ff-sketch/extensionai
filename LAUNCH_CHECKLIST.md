@@ -4,112 +4,112 @@ A frank assessment of what's actually done vs. what still needs a human to
 do something outside this codebase before ExtenAI can take real users and
 real money. Organized so you can tell at a glance what's blocking launch.
 
-> **Update — full code audit completed (commit `52aa871`).** A line-by-line
-> audit of the entire codebase (excluding anything requiring live Firebase
-> credentials) found and fixed 6 real issues, the most notable being that
-> `.env.example` had silently never been committed to git since day one due
-> to a `.gitignore` bug, and that a whole AI feature (the "Reviewer" role)
-> was fully built but unreachable from the UI. See ROADMAP.md's "Recently
-> closed follow-ups" for the full list. **Nothing in this update changes the
-> bottom line below** — the code was already correct where it was reachable;
-> the audit closed gaps in reach and repo hygiene, not in correctness.
+> **Update — live deployment reached, one production bug found and fixed
+> (commit `d76a68d`).** Real Firebase + Anthropic + OpenRouter credentials
+> were wired in and validated as far as this development environment's
+> network restrictions allow (it can reach `api.anthropic.com` but not
+> Firebase's or OpenRouter's domains — see "What's actually been verified"
+> below for exactly what that means). The first real Vercel deploy 500'd on
+> every page, including the public landing page; root cause was `proxy.ts`
+> accidentally bundling the full Firebase Admin SDK into a runtime that
+> can't load one of its dependencies. Fixed, verified by inspecting the
+> built output directly, and pushed. See ROADMAP.md for the full writeup.
 
-## ✅ Code-complete (verified: typecheck, lint, 25 unit tests, production
-build, and a local smoke test all pass as of this commit)
+## What's actually been verified, and how
+
+This section exists because "verified" can mean different things — being
+precise about which is true for which piece:
+
+| Component | Verified how | Confidence |
+|---|---|---|
+| Code correctness (typecheck/lint/tests/build) | Run directly, repeatedly, in this environment | High — this is unambiguous |
+| Firebase Admin credentials (service account) | SDK accepted the credential; a real call reached toward `firestore.googleapis.com` before being blocked by *this dev environment's* network policy, not by anything wrong with the credential | High that the credential is valid; **no live Firestore read/write has actually succeeded yet** |
+| Firebase client config | Builds correctly into the app; never exercised in a real browser (this environment has no browser, only curl) | Structural only |
+| Anthropic API key + model | A real API call reached Anthropic's server and got a real, specific error (org-key scoping, then insufficient credit) — not a network or code error | High — the request pipeline works, the account just needs credit |
+| OpenRouter API key + model | **Never reached OpenRouter's servers at all** — `openrouter.ai` is blocked from this dev environment the same way Firebase is. Key validity and the chosen free model's availability are both unconfirmed | Structural only |
+| The `proxy.ts` production fix | Rebuilt and inspected the actual compiled output for the two specific chunks the proxy loads — zero references to the library that caused the crash | High |
+| The full signup → generate → download golden path, live | **Not yet confirmed by anyone, from anywhere** | This is the one that matters most and is still open |
+
+The practical upshot: the outage you hit and reported is fixed and verified.
+Whether generation itself works today, on OpenRouter's free tier, against
+your real Vercel deployment, is the one remaining open question — and it
+can only be answered by actually trying it, from somewhere with normal
+internet access (i.e., not from me, from this environment).
+
+## ✅ Code-complete (typecheck, lint, 28 unit tests, production build all
+green as of this commit)
 
 **Core product (spec section 28's MVP success criteria) — the whole golden
-path works end to end:** sign up → create project → describe an extension →
+path exists in code:** sign up → create project → describe an extension →
 AI generates it → view/edit files → chat a change → Accept/Reject with a
 line diff → validator → download a ZIP with a real Manifest V3 → loadable
 via `chrome://extensions` → Developer mode → Load unpacked.
 
-Beyond that golden path:
-- Version history with restore, for both AI and manual edits
-- GitHub export (OAuth connect, single-commit push to a new repo)
-- Stripe billing (Checkout, Billing Portal, webhook-driven plan sync)
-- An on-demand AI-driven permissions/security review (spec section 33's
-  "Reviewer" role), alongside the free static validator
-- Rate limiting on the AI endpoints; project/file size limits enforced
-  server-side, with a live indicator in the editor
-- Security headers (CSP, X-Frame-Options, etc.), Firestore rules that deny
-  all direct client access, encrypted-at-rest GitHub tokens, friendly
-  error/404 pages
-- Analytics event instrumentation (all of spec section 24's event names)
-- Terms of Service / Privacy Policy pages — **drafts**, see below
+Beyond that: version history with restore, GitHub export, Stripe billing,
+an on-demand AI review alongside the free static validator, rate limiting,
+project size limits with a live UI indicator, security headers, Firestore
+rules that deny all direct client access, encrypted-at-rest GitHub tokens,
+friendly error/404 pages, analytics event instrumentation, and Terms/Privacy
+drafts. Two AI providers are supported (Anthropic, OpenRouter) behind one
+interface, switchable via `AI_PROVIDER` with no code changes.
 
-None of this is simulated — every route in ARCHITECTURE.md does what it
-says. What's *not* done is exercising it against live third-party accounts,
-because this environment has no real Firebase/GitHub/Stripe credentials to
-test with.
+## 🔲 The one thing to do right now
+
+**Actually run the golden path against your live Vercel deployment and see
+what happens.** Concretely:
+
+1. Open your Vercel URL. Confirm `/` loads (should be fixed now).
+2. Sign up with a real email/password.
+3. Create a project, describe a simple extension, hit Generate.
+4. Watch what happens. Three outcomes are all informative:
+   - **It works** — you have a working MVP, go to the next section.
+   - **It fails with a specific error message** (e.g. "we couldn't generate
+     your extension") — check Vercel's Runtime Logs the same way you did
+     for the last bug, and send me the log. Likely causes, in order of
+     probability: the chosen free OpenRouter model got deprecated/renamed
+     (check https://openrouter.ai/models?max_price=0 and update `AI_MODEL`
+     in Vercel's env vars), or a Firestore composite index isn't deployed
+     yet (see item 1 below — the error message from Firestore includes a
+     direct link to create the missing index).
+   - **Signup itself fails** — almost certainly a Firestore index or a
+     copy-paste error in the Firebase env vars; again, check Runtime Logs.
 
 ## 🔲 Requires you to do something outside this repo
 
-These aren't code gaps — they're steps only you can take (they need
-accounts, legal judgment, or money), and none of them are things I can
-complete for you from here.
-
-1. **Create a real Firebase project** and fill in every variable in
-   `.env.example` — see SETUP.md steps 1–6. Deploy `firestore.rules` and
-   `firestore.indexes.json`, or `listProjects`/version-history queries will
-   fail with a Firestore "missing index" error the first time someone hits
-   them.
-2. **Register a GitHub OAuth App** and a **Stripe account** (test mode
-   first) if you want those features live — SETUP.md steps 7–8. Both
-   features degrade gracefully if left unconfigured (a clear "not
-   configured" message instead of a crash), so you can launch without
-   either and turn them on later.
-3. **Have a lawyer review `/terms` and `/privacy`.** Both pages are real,
-   working routes with content that accurately describes what this codebase
-   actually stores and which third parties it shares data with — but the
-   bracketed placeholders (`[DATE]`, `[Company legal name]`, liability caps,
-   your actual retention policy, etc.) are not filled in, and the whole
-   thing needs a lawyer's sign-off for your jurisdiction before you rely on
-   it. Chrome Web Store and Stripe both effectively require a real privacy
-   policy for anything you publish through them.
-4. **Test GitHub export and Stripe billing against real (sandbox) accounts.**
-   Both integrations are code-complete (see ARCHITECTURE.md) but have never
-   been exercised against a live GitHub OAuth App or a live Stripe account
-   from this environment — there's a real difference between "the code is
-   correct by inspection" and "someone clicked through it against the real
-   API." Budget an hour for this before turning either on for paying users.
-5. **Decide on a domain and deploy** (e.g. to Vercel — this is a standard
-   Next.js app, no special hosting requirements). Point
-   `GITHUB_OAUTH_CLIENT_ID`'s callback URL and Stripe's webhook endpoint at
-   the real production URL, not `localhost`.
-6. **Set up basic monitoring.** There's no error-tracking service wired in
-   (the `error.tsx`/`global-error.tsx` pages have a `console.error` call
-   marked as the hook point — see the comment in `error.tsx`). At minimum,
-   watch your hosting provider's logs for the first few days.
-7. **Decide your actual Stripe prices** and create them in the Stripe
-   dashboard — `STRIPE_PRICE_PRO`/`STRIPE_PRICE_PRO_PLUS` need real price
-   IDs, and the $19/$49 numbers on the landing page and pricing section are
-   the spec's suggested defaults, not something this build enforces from a
-   single source of truth. If you change the price, update both the Stripe
-   dashboard and `src/app/page.tsx`'s pricing section together.
-8. **Decide what to do about account/project deletion.** Right now there's
-   no user-facing "delete my account" or "delete this project" flow — worth
-   having before you're handling real people's data, both for UX and for
-   privacy-law compliance (the Privacy Policy draft already flags this).
+1. **Deploy `firestore.rules` and `firestore.indexes.json`** if you haven't
+   — via `firebase deploy --only firestore:rules,firestore:indexes`, or by
+   pasting them into the Firebase console manually (SETUP.md step 6).
+   Without the indexes specifically, `listProjects` (your dashboard) and
+   file-version history will fail — Firestore's error message includes a
+   direct link to create the missing index, so this is self-diagnosing if
+   you hit it.
+2. **Confirm the OpenRouter free model still exists.** Their free catalog
+   rotates. If generation fails, this is the first thing to check.
+3. **Register a GitHub OAuth App and/or a Stripe account** (test mode
+   first) if/when you want those features live. Both degrade gracefully if
+   left unconfigured.
+4. **Have a lawyer review `/terms` and `/privacy`** before you rely on them
+   — they're accurate drafts, not reviewed legal documents. Needed before
+   Chrome Web Store or Stripe will really be comfortable, and before you
+   take on real user data at any scale that matters to you.
+5. **Point real domains/callback URLs at production**, not `localhost` —
+   GitHub OAuth callback, Stripe webhook endpoint, once you set those up.
+6. **Set up basic monitoring/error tracking.** Watch Vercel's Runtime Logs
+   for the first while; `error.tsx`/`global-error.tsx` have a marked hook
+   point for wiring in a real error tracker later.
+7. **Decide on account/project deletion.** No user-facing flow for this
+   yet — worth having before real users' data is involved.
 
 ## Deliberately not built (by the original product spec, not an oversight)
 
-- Automated Chrome Web Store publishing — `/api/store-prep` prepares
-  everything (ZIP, permission explanations, checklist); actual submission
-  stays manual, per spec section 18.
-- Team collaboration, multi-user projects.
-- A public marketplace/gallery of extensions.
-
-These were explicitly deprioritized in the original spec (section 25: "NO
-implementar P2 antes de tener P0 funcionando") and aren't required for a v1
-launch — the product is fully usable by an individual builder without them.
+Automated Chrome Web Store publishing, team collaboration, and a public
+marketplace — all explicitly P2/deprioritized in the original spec and not
+required for a v1 launch.
 
 ## Bottom line
 
-**The code is ready.** Every feature in the spec's P0 and P1, plus GitHub
-export and Stripe billing from P2, works and is verified (build/lint/test
-all green). What stands between this and a real launch is entirely the
-external setup in the checklist above — a Firebase project, OAuth app
-credentials, a Stripe account, a domain, and a lawyer's pass on the legal
-pages — none of which can be done from inside this development environment.
-None of it is a lot of work, and most of it (steps 1–2) is normal "hook up
-your third-party services" work you'd do for any new app on this stack.
+**The code is ready and one real production bug is now fixed and verified.**
+The single open question — does generation actually work end-to-end on the
+live deployment — can't be answered from this environment; it needs someone
+with normal internet access to click through it once. Do that next, before
+inviting anyone else in.
