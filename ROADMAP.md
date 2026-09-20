@@ -70,6 +70,31 @@ Status of the priority order from the product spec (section 25).
 
 ## Recently closed follow-ups
 
+- [x] **Fixed a second, related production bug — `ERR_REQUIRE_ESM` on every
+      route that touches Firebase Auth (`/api/auth/session`, confirmed via
+      Vercel Runtime Logs during real signup/login attempts).** The first
+      `proxy.ts` fix (below) wasn't the whole story: `firebase-admin`'s
+      `lib/utils/jwt.js` does a plain top-level `require("jwks-rsa")` the
+      moment anything imports `firebase-admin/auth` — regardless of which
+      token is being verified — and `jwks-rsa` pulls in `jose`'s ESM-only
+      build, which Next's server bundler doesn't reconcile correctly in
+      Vercel's serverless packaging. Fix: added `serverExternalPackages:
+      ["firebase-admin", "google-auth-library", "jwks-rsa", "jose"]` to
+      `next.config.ts` — the officially documented mechanism for telling
+      Next's bundler to load a package via Node's native `require`/`import`
+      at runtime instead of trying to bundle it.
+
+      **Honest caveat:** this bug could not be reproduced with
+      `next build && next start` in this development environment even with
+      a structurally-valid (if cryptographically fake) JWT — whatever
+      differs between this sandbox's bundler resolution and Vercel's actual
+      serverless packaging didn't manifest here. The fix is the standard,
+      well-documented solution for this well-known error signature, and
+      local verification (clean build, `.nft.json` output now correctly
+      traces `firebase-admin` as an external runtime dependency, no
+      regressions in typecheck/lint/28 tests/smoke test) is as far as this
+      environment can confirm it. **A real redeploy-and-retest on Vercel is
+      needed to close this out with certainty** — see LAUNCH_CHECKLIST.md.
 - [x] **Fixed a real production outage: every page 500'd on Vercel,
       including the public landing page.** `src/proxy.ts` (runs on every
       request) imported `SESSION_COOKIE_NAME` from `lib/firebase/session.ts`,
@@ -84,6 +109,11 @@ Status of the priority order from the product spec (section 25).
       including a real Firebase project's credentials. See
       ARCHITECTURE.md's auth-model section for the full writeup and the
       warning comments left in both files so this doesn't regress.
+- [x] **Removed inappropriate Claude-specific phrasing from `error.tsx`.**
+      It referenced a "thumbs-down button" — a Claude.ai UI element this app
+      doesn't have — found while diagnosing the bug above (a real signup
+      attempt tripped the error boundary and the person reading it, quite
+      reasonably, had no idea what button it meant).
 
 - [x] **OpenRouter as a second AI provider** (`lib/ai/providers/openrouter.ts`,
       `AI_PROVIDER=openrouter`) — lets ExtenAI run on a free-tier model

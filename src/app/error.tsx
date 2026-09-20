@@ -16,8 +16,8 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
       <ExtenAIMark className="h-8 w-8 text-bad" />
       <h1 className="mt-4 font-[family-name:var(--font-display)] text-2xl font-semibold">Something went wrong</h1>
       <p className="mt-2 max-w-sm text-sm text-ink-dim">
-        We hit an unexpected error. Please try again — if it keeps happening, the thumbs-down button
-        or your team&apos;s support channel is the fastest way to let us know.
+        We hit an unexpected error. Please try again — if it keeps happening,
+        let us know at [support email].
       </p>
       <button
         onClick={reset}

@@ -15,6 +15,17 @@ real money. Organized so you can tell at a glance what's blocking launch.
 > can't load one of its dependencies. Fixed, verified by inspecting the
 > built output directly, and pushed. See ROADMAP.md for the full writeup.
 
+> **Update — a second, related bug found and fixed, still needs live
+> confirmation.** After the first fix (`proxy.ts` bundling issue), a real
+> signup attempt on Vercel hit the *same* `ERR_REQUIRE_ESM` error family,
+> this time from `/api/auth/session`. Root cause: `firebase-admin` itself
+> does a top-level `require("jwks-rsa")` that Next's bundler mishandles in
+> Vercel's serverless packaging — unrelated to the proxy this time. Fixed
+> with `serverExternalPackages` in `next.config.ts` (the standard, documented
+> fix for this exact error signature), but **this one could not be
+> reproduced locally to prove the fix works** — see ROADMAP.md for the full
+> honest writeup. Redeploy and retest signup before trusting this is closed.
+
 ## What's actually been verified, and how
 
 This section exists because "verified" can mean different things — being
