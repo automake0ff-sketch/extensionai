@@ -54,12 +54,18 @@ export function LoginForm() {
       }
       router.push(redirectTo);
       router.refresh();
-    } catch {
-      setError(
-        mode === "sign_in"
-          ? "We couldn't sign you in. Check your email and password and try again."
-          : "We couldn't create your account. Please try a different email or a stronger password."
-      );
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (mode === "sign_up" && code === "auth/email-already-in-use") {
+        setError("That email already has an account. Try logging in instead.");
+        setMode("sign_in");
+      } else {
+        setError(
+          mode === "sign_in"
+            ? "We couldn't sign you in. Check your email and password and try again."
+            : "We couldn't create your account. Please try a different email or a stronger password."
+        );
+      }
     } finally {
       setLoading(false);
     }
