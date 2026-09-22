@@ -53,6 +53,44 @@ function messagesCol(projectId: string) {
 // Profiles
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Closed beta waitlist
+// ---------------------------------------------------------------------------
+// waitlist/{normalizedEmail}: { email, status: "pending" | "approved",
+// niche, createdAt, approvedAt }. Gates account creation while the product
+// is in closed beta — see POST /api/auth/session. There is no admin UI for
+// approving people yet; flip a doc's `status` field to "approved" directly
+// in the Firestore console.
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export async function joinWaitlist(
+  email: string,
+  fields: { niche?: string } = {}
+): Promise<{ alreadyOnList: boolean }> {
+  const id = normalizeEmail(email);
+  const ref = adminDb().collection("waitlist").doc(id);
+  const existing = await ref.get();
+  if (existing.exists) {
+    return { alreadyOnList: true };
+  }
+  await ref.set({
+    email: id,
+    status: "pending",
+    niche: fields.niche ?? null,
+    createdAt: new Date().toISOString(),
+    approvedAt: null,
+  });
+  return { alreadyOnList: false };
+}
+
+export async function isEmailApproved(email: string): Promise<boolean> {
+  const snap = await adminDb().collection("waitlist").doc(normalizeEmail(email)).get();
+  return snap.exists && snap.data()?.status === "approved";
+}
+
 export async function getProfile(uid: string): Promise<Profile | null> {
   const snap = await adminDb().collection("profiles").doc(uid).get();
   if (!snap.exists) return null;

@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
 
 const TEMPLATES = [
-  { name: "Gmail productivity", prompt: "Create a Chrome extension that adds quick reply templates and a snooze button to Gmail." },
-  { name: "Amazon tools", prompt: "Create a Chrome extension that extracts product names and prices from Amazon and exports them to CSV." },
-  { name: "LinkedIn tools", prompt: "Create a Chrome extension that saves the LinkedIn profile I'm viewing to a local list I can export as CSV." },
-  { name: "YouTube tools", prompt: "Create a Chrome extension that adds a button to copy the current YouTube video's transcript." },
   { name: "SEO tools", prompt: "Create a Chrome extension that audits the current page's title, meta description, and heading structure." },
+  { name: "Data export", prompt: "Create a Chrome extension that extracts every table on the current page and exports it to CSV." },
+  { name: "Gmail productivity", prompt: "Create a Chrome extension that adds quick reply templates and a snooze button to Gmail." },
+  { name: "YouTube tools", prompt: "Create a Chrome extension that adds a button to copy the current YouTube video's transcript." },
   { name: "Screenshot tools", prompt: "Create a Chrome extension that captures a full-page screenshot and lets me download it as PNG." },
   { name: "Productivity tools", prompt: "Create a Chrome extension that blocks distracting sites during a focus timer I control from the popup." },
+  { name: "Internal ops tools", prompt: "Create a Chrome extension that adds a checklist sidebar to any page for tracking a multi-step process." },
 ];
 
 export default function NewProjectPage() {
@@ -67,7 +67,7 @@ export default function NewProjectPage() {
             onChange={(e) => setPrompt(e.target.value)}
             rows={3}
             disabled={loading}
-            placeholder="Create a Chrome extension that extracts product prices from Amazon and lets me export them to CSV."
+            placeholder="Create a Chrome extension that audits a page's SEO tags and flags what's missing."
             className="w-full resize-none rounded-2xl bg-transparent px-4 py-3 text-sm outline-none placeholder:text-ink-dim disabled:opacity-60"
           />
         </div>

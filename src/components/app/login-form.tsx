@@ -11,9 +11,11 @@ import {
 } from "firebase/auth";
 import { clientAuth, githubProvider, googleProvider } from "@/lib/firebase/client";
 import { ExtenAIMark } from "@/components/brand/mark";
-import { Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 
 type Mode = "sign_in" | "sign_up";
+
+class WaitlistGatedError extends Error {}
 
 async function establishServerSession(idToken: string) {
   const res = await fetch("/api/auth/session", {
@@ -21,7 +23,13 @@ async function establishServerSession(idToken: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ idToken }),
   });
-  if (!res.ok) throw new Error("Could not establish a session.");
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    if (data?.error === "waitlist") {
+      throw new WaitlistGatedError(data.message ?? "ExtenAI is in closed beta right now.");
+    }
+    throw new Error("Could not establish a session.");
+  }
 }
 
 export function LoginForm() {
@@ -30,14 +38,32 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [gated, setGated] = useState(false);
+  const [joiningWaitlist, setJoiningWaitlist] = useState(false);
+  const [joinedWaitlist, setJoinedWaitlist] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirectTo") || "/dashboard";
+
+  async function handleJoinWaitlist() {
+    setJoiningWaitlist(true);
+    try {
+      await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      setJoinedWaitlist(true);
+    } finally {
+      setJoiningWaitlist(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setGated(false);
 
     try {
       if (mode === "sign_in") {
@@ -55,6 +81,11 @@ export function LoginForm() {
       router.push(redirectTo);
       router.refresh();
     } catch (err) {
+      if (err instanceof WaitlistGatedError) {
+        setGated(true);
+        setError(err.message);
+        return;
+      }
       const code = (err as { code?: string })?.code;
       if (mode === "sign_up" && code === "auth/email-already-in-use") {
         setError("That email already has an account. Try logging in instead.");
@@ -73,13 +104,20 @@ export function LoginForm() {
 
   async function handleOAuth(provider: "github" | "google") {
     setError(null);
+    setGated(false);
     try {
       const credential = await signInWithPopup(clientAuth, provider === "github" ? githubProvider : googleProvider);
+      if (credential.user.email) setEmail(credential.user.email);
       const idToken = await credential.user.getIdToken();
       await establishServerSession(idToken);
       router.push(redirectTo);
       router.refresh();
-    } catch {
+    } catch (err) {
+      if (err instanceof WaitlistGatedError) {
+        setGated(true);
+        setError(err.message);
+        return;
+      }
       setError("We couldn't sign you in with that provider. Please try again.");
     }
   }
@@ -149,7 +187,28 @@ export function LoginForm() {
               />
             </div>
 
-            {error && <p className="text-sm text-bad">{error}</p>}
+            {error && !gated && <p className="text-sm text-bad">{error}</p>}
+
+            {gated && (
+              <div className="rounded-lg border border-ink-line bg-ink px-3 py-3 text-sm">
+                <p className="text-ink-dim">{error}</p>
+                {joinedWaitlist ? (
+                  <p className="mt-2 flex items-center gap-1.5 text-good">
+                    <CheckCircle2 className="h-4 w-4" /> You&apos;re on the list — we&apos;ll email you.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleJoinWaitlist}
+                    disabled={joiningWaitlist}
+                    className="mt-2 flex items-center gap-2 rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
+                  >
+                    {joiningWaitlist && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Join the waitlist with this email
+                  </button>
+                )}
+              </div>
+            )}
 
             <button
               type="submit"

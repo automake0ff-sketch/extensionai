@@ -1,21 +1,22 @@
 import Link from "next/link";
 import { ExtenAIMark } from "@/components/brand/mark";
+import { WaitlistForm } from "@/components/app/waitlist-form";
 import { ArrowRight, Check, Puzzle, ShieldCheck, GitBranch, FlaskConical, Download } from "lucide-react";
 
 const EXAMPLE_PROMPTS = [
-  "Create an extension that saves LinkedIn profiles to my CRM.",
-  "Create an extension that exports Amazon products to CSV.",
-  "Create a Gmail assistant that summarizes emails.",
-  "Create a browser tool that extracts tables from any webpage.",
+  "Create an extension that audits a page's title, meta description, and heading structure.",
+  "Create a browser tool that extracts every table on a page and exports it to CSV.",
+  "Create an extension that finds broken links on the current page.",
+  "Create a Gmail assistant that summarizes long threads.",
 ];
 
 const TEMPLATES = [
-  { name: "Gmail productivity", desc: "Summarize threads, snooze emails, add quick templates." },
-  { name: "Amazon tools", desc: "Extract prices, track products, export listings to CSV." },
-  { name: "LinkedIn tools", desc: "Save profiles, tag leads, sync to a CRM." },
-  { name: "YouTube tools", desc: "Transcript export, playback tweaks, watch-later sync." },
   { name: "SEO tools", desc: "On-page audits, meta tag inspection, broken link checks." },
+  { name: "Data export", desc: "Pull tables or lists from any page and export them to CSV." },
+  { name: "Gmail productivity", desc: "Summarize threads, snooze emails, add quick templates." },
+  { name: "Internal ops tools", desc: "Small team-specific helpers — form fillers, checklists, status trackers." },
   { name: "Screenshot tools", desc: "Full-page capture, annotate, and export instantly." },
+  { name: "Personal productivity", desc: "Focus timers, tab management, reading-list helpers." },
 ];
 
 const STEPS = [
@@ -74,12 +75,12 @@ export default function LandingPage() {
             <Link href="/login" className="text-sm text-ink-dim hover:text-ink-100">
               Log in
             </Link>
-            <Link
-              href="/projects/new"
+            <a
+              href="#waitlist"
               className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
             >
-              Create your extension
-            </Link>
+              Join the waitlist
+            </a>
           </div>
         </div>
       </header>
@@ -97,19 +98,15 @@ export default function LandingPage() {
         </p>
 
         {/* Signature element: the "omnibox" prompt bar */}
-        <div className="mx-auto mt-10 max-w-2xl">
+        <div id="waitlist" className="mx-auto mt-10 max-w-2xl scroll-mt-24">
           <div className="omnibox flex items-center gap-3 px-5 py-4 text-left">
             <span className="h-2 w-2 shrink-0 rounded-full bg-good" />
             <span className="truncate text-sm text-ink-dim sm:text-base">
-              Create a Chrome extension that extracts product prices from Amazon and lets me export them to CSV.
+              Create a Chrome extension that audits a page&apos;s SEO tags and flags what&apos;s missing.
             </span>
           </div>
-          <Link
-            href="/projects/new"
-            className="mt-5 inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-medium text-white hover:opacity-90"
-          >
-            Build your extension <ArrowRight className="h-4 w-4" />
-          </Link>
+          <p className="mt-6 text-sm font-medium text-ink-100">ExtenAI is in closed beta.</p>
+          <WaitlistForm className="mt-3" />
         </div>
 
         <div className="mx-auto mt-14 grid max-w-3xl gap-3 text-left sm:grid-cols-2">
@@ -184,6 +181,10 @@ export default function LandingPage() {
           <h2 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
             Pricing
           </h2>
+          <p className="mt-2 max-w-2xl text-sm text-ink-dim">
+            Preliminary — during the closed beta, everyone starts on Free. We&apos;ll confirm paid
+            pricing once we&apos;ve validated it with early users.
+          </p>
           <div className="mt-10 grid gap-6 lg:grid-cols-3">
             {[
               { name: "Free", price: "$0", items: ["2 projects", "20 AI credits / month", "ZIP export"] },
@@ -206,14 +207,14 @@ export default function LandingPage() {
                     </li>
                   ))}
                 </ul>
-                <Link
-                  href="/projects/new"
+                <a
+                  href="#waitlist"
                   className={`mt-6 block rounded-full py-2.5 text-center text-sm font-medium ${
                     plan.highlight ? "bg-accent text-white hover:opacity-90" : "border border-ink-line hover:bg-ink"
                   }`}
                 >
-                  Get started
-                </Link>
+                  Join the waitlist
+                </a>
               </div>
             ))}
           </div>
@@ -246,12 +247,12 @@ export default function LandingPage() {
           <h2 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
             Tell it what you want. It builds it.
           </h2>
-          <Link
-            href="/projects/new"
+          <a
+            href="#waitlist"
             className="mt-6 inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-medium text-white hover:opacity-90"
           >
-            Create your extension <ArrowRight className="h-4 w-4" />
-          </Link>
+            Join the waitlist <ArrowRight className="h-4 w-4" />
+          </a>
         </div>
       </section>
 

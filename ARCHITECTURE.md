@@ -359,6 +359,35 @@ all-added/all-removed since there's no "before"/"after" to diff. Large
 diffs are capped at 300 rendered lines with a "N more lines not shown" note,
 to keep a chat-panel-sized card usable.
 
+## Closed beta gate
+
+The product launched with an open sign-up flow; per early go-to-market
+feedback, it's now gated behind a waitlist while the team validates AI cost
+per generation and product-market fit with a specific niche (SEO/marketing
+agencies, ops teams — see ROADMAP.md).
+
+- `POST /api/waitlist` — public, no auth. Adds `{ email, niche? }` to the
+  `waitlist` Firestore collection with `status: "pending"`. Rate-limited by
+  email (`lib/firebase/ratelimit.ts`) to stop naive repeat submissions.
+- `POST /api/auth/session` — on **first-time** account creation only (an
+  existing `profiles/{uid}` doc always bypasses this), checks
+  `isAllowedDuringBeta(email)`: allowed if `WAITLIST_GATE_ENABLED=false`, or
+  the email is in `BETA_ALLOWED_EMAILS`, or the matching `waitlist` doc has
+  `status: "approved"`. Rejected sign-ups get a distinct
+  `{ error: "waitlist", message }` (HTTP 403) rather than a generic failure,
+  and never get a session cookie or a `profiles` doc.
+- `components/app/login-form.tsx` recognizes that specific response and
+  offers to add the email straight to the waitlist instead of showing a
+  dead-end error.
+- The landing page's CTAs (`components/app/waitlist-form.tsx`) all point at
+  the waitlist join form instead of `/projects/new` while the beta is
+  closed; pricing is shown as informational/preliminary, not purchasable.
+
+There's no admin UI for approving people yet — flip a `waitlist/{email}`
+doc's `status` field to `"approved"` directly in the Firestore console.
+Turning the whole gate off later (once ready for open signups) is a single
+env var (`WAITLIST_GATE_ENABLED=false`), not a code change.
+
 ## Security model
 
 See `SECURITY.md` for the full write-up. In short: Firestore Security Rules

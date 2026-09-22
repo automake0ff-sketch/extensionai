@@ -70,6 +70,22 @@ Status of the priority order from the product spec (section 25).
 
 ## Recently closed follow-ups
 
+- [x] **Closed beta / waitlist gate**, per early go-to-market feedback: the
+      landing page no longer sends anyone straight to `/projects/new` — its
+      CTAs all lead to a waitlist join form (`components/app/waitlist-form.tsx`,
+      `POST /api/waitlist`). New account creation is blocked server-side
+      unless the email is pre-approved or in `BETA_ALLOWED_EMAILS`
+      (`POST /api/auth/session`); existing accounts are unaffected. Riskier
+      example prompts (Amazon/LinkedIn scraping) were swapped for lower-risk
+      ones (SEO audits, table export, internal ops tools, personal
+      productivity) on both the landing page and `/projects/new`'s templates,
+      and the pricing section now reads as preliminary/informational rather
+      than purchasable. See ARCHITECTURE.md's "Closed beta gate" section for
+      the mechanics, and set `BETA_ALLOWED_EMAILS` to your own test
+      addresses so you're never locked out of your own product. Turn the
+      whole gate off later with `WAITLIST_GATE_ENABLED=false` — no code
+      change needed.
+
 - [x] **Fixed a second, related production bug — `ERR_REQUIRE_ESM` on every
       route that touches Firebase Auth (`/api/auth/session`, confirmed via
       Vercel Runtime Logs during real signup/login attempts).** The first

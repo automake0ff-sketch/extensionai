@@ -16,6 +16,8 @@ Environment Variables). See `.env.example` for the canonical list.
 | `FIREBASE_CLIENT_EMAIL` | Yes | **No** | Admin SDK service account email. |
 | `FIREBASE_PRIVATE_KEY` | Yes | **No** | Admin SDK service account private key. Grants full read/write to Firestore and full control of Auth — treat like any other master secret. |
 | `APP_ENCRYPTION_KEY` | Yes, if GitHub export is enabled | **No** | AES-256-GCM key (32 bytes, base64) used to encrypt the GitHub access token before it's stored in Firestore. Generate with `openssl rand -base64 32`. |
+| `WAITLIST_GATE_ENABLED` | No (defaults to on) | No | Set to `"false"` to open signups to everyone. While on, a new account needs an approved waitlist entry or to be in `BETA_ALLOWED_EMAILS`. |
+| `BETA_ALLOWED_EMAILS` | No | No | Comma-separated emails that always bypass the waitlist gate — put your own test accounts here. |
 | `AI_PROVIDER` | Yes | No | Selects the implementation in `lib/ai/providers/`: `"anthropic"` (default) or `"openrouter"` (for running on a free-tier model instead of paying for AI credits). |
 | `AI_API_KEY` | Yes | No | Secret key for the configured provider. |
 | `AI_MODEL` | No | No | Overrides the provider's default model string. |

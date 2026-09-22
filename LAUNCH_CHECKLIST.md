@@ -87,6 +87,13 @@ what happens.** Concretely:
 
 ## 🔲 Requires you to do something outside this repo
 
+0. **Set `BETA_ALLOWED_EMAILS` in Vercel to your own email(s), then
+   redeploy.** The product now gates new sign-ups behind a closed-beta
+   waitlist by default (`WAITLIST_GATE_ENABLED`) — see ARCHITECTURE.md's
+   "Closed beta gate" section. Without this set, **you will lock yourself
+   out of your own product** the next time you try to create a test
+   account with a new email. Comma-separate multiple addresses if needed.
+
 1. **Deploy `firestore.rules` and `firestore.indexes.json`** if you haven't
    — via `firebase deploy --only firestore:rules,firestore:indexes`, or by
    pasting them into the Firebase console manually (SETUP.md step 6).
