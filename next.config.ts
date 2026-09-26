@@ -4,20 +4,28 @@ const nextConfig: NextConfig = {
   // Tells Next's server bundler to load these packages via Node's native
   // require()/import() at runtime instead of trying to bundle them.
   //
-  // Without this, firebase-admin crashes in production (confirmed on
-  // Vercel, could not reproduce with `next build && next start` in this
-  // sandbox — the bundler apparently resolves it differently in the two
-  // environments) with:
+  // ROOT CAUSE (confirmed via real Vercel Runtime Logs, still crashing as
+  // of 2026-09-25 on /api/auth/session, /api/waitlist, /api/projects, two
+  // days after switching the build to webpack):
   //   Error [ERR_REQUIRE_ESM]: require() of ES Module .../jose/dist/webapi/
   //   index.js from .../jwks-rsa/src/utils.js not supported.
-  // Root cause: firebase-admin/lib/utils/jwt.js does a plain top-level
-  // `require("jwks-rsa")` the moment anything imports firebase-admin/auth
-  // (lib/firebase/admin.ts does, for adminAuth()) — jwks-rsa in turn pulls
-  // in `jose`'s ESM-only webapi build, which Next's bundler doesn't
-  // reconcile correctly. This is a known compatibility gap between
-  // firebase-admin's dependency chain and Next.js's server bundler;
-  // serverExternalPackages is the documented fix — see
-  // https://nextjs.org/docs/app/api-reference/config/next-config-js/serverExternalPackages
+  // This is NOT a bundler issue — forcing `next build --webpack` (see
+  // package.json) did not fix it, because serverExternalPackages makes
+  // Next skip bundling these packages entirely, so they're loaded via
+  // Node's own require() straight from node_modules in the Lambda,
+  // regardless of webpack vs. turbopack. firebase-admin/lib/utils/jwt.js
+  // does an unconditional top-level `require("jwks-rsa")` the moment
+  // anything touches firebase-admin/auth (adminAuth() in
+  // lib/firebase/admin.ts does), and jwks-rsa@4.x depends on jose@^6,
+  // which ships as pure ESM ("type": "module", no CJS build, no "require"
+  // export condition at all) — so `require("jose")` inside jwks-rsa is
+  // structurally impossible to satisfy under plain Node require(), in any
+  // bundler. The actual fix is the "overrides" entry in package.json,
+  // pinning `jose` to the last version with a real CJS build (4.15.9) so
+  // jwks-rsa's require() resolves to something requirable. Don't remove
+  // that override thinking this serverExternalPackages entry alone is
+  // enough — it isn't, and this bug has already resurfaced once from that
+  // exact assumption.
   serverExternalPackages: ["firebase-admin", "google-auth-library", "jwks-rsa", "jose"],
   async headers() {
     return [
