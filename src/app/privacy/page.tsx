@@ -20,7 +20,7 @@ export default function PrivacyPage() {
       </div>
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold">Privacy Policy</h1>
-      <p className="mt-1 text-sm text-ink-dim">Last updated: [DATE — fill in at launch]</p>
+      <p className="mt-1 text-sm text-ink-dim">Last updated: September 27, 2026</p>
 
       <div className="prose prose-invert mt-8 space-y-6 text-sm leading-relaxed text-ink-dim">
         <section>
@@ -72,18 +72,22 @@ export default function PrivacyPage() {
         <section>
           <h2 className="text-base font-medium text-ink-100">How long we keep data</h2>
           <p>
-            [Define a real retention policy here — e.g. &ldquo;project data is retained until you
-            delete the project or your account; deleted accounts are purged within N days.&rdquo;]
-            This isn&apos;t yet automated in the codebase — account/project deletion flows are on the
-            roadmap.
+            We keep your account and project data for as long as your account is active. There is
+            currently no self-serve account or project deletion feature in the product — it&apos;s on
+            the roadmap. Until it ships, you can request deletion by emailing us at the address below;
+            we&apos;ll remove your data within 30 days of a verified request, except where we&apos;re
+            required to retain records for legal, tax, or fraud-prevention reasons.
           </p>
         </section>
         <section>
           <h2 className="text-base font-medium text-ink-100">Your rights</h2>
           <p>
             Depending on where you live, you may have rights to access, correct, export, or delete
-            your personal data. [Add your jurisdiction-specific rights language and a contact method
-            for exercising them here.]
+            your personal data (for example under the GDPR if you&apos;re in the EU/UK, or the CCPA/CPRA
+            if you&apos;re a California resident). To exercise any of these rights, email us at the
+            address below and we&apos;ll respond within the timeframe your local law requires. This
+            section is a general placeholder and still needs review by a lawyer familiar with your
+            specific jurisdictions before launch.
           </p>
         </section>
         <section>
@@ -95,7 +99,7 @@ export default function PrivacyPage() {
         </section>
         <section>
           <h2 className="text-base font-medium text-ink-100">Contact</h2>
-          <p>Questions about this policy: [support/privacy email].</p>
+          <p>Questions about this policy: automake0ff@gmail.com.</p>
         </section>
       </div>
     </div>

@@ -19,15 +19,16 @@ export default function TermsPage() {
       </div>
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold">Terms of Service</h1>
-      <p className="mt-1 text-sm text-ink-dim">Last updated: [DATE — fill in at launch]</p>
+      <p className="mt-1 text-sm text-ink-dim">Last updated: September 27, 2026</p>
 
       <div className="prose prose-invert mt-8 space-y-6 text-sm leading-relaxed text-ink-dim">
         <section>
           <h2 className="text-base font-medium text-ink-100">1. Who we are</h2>
           <p>
             ExtenAI (&ldquo;we,&rdquo; &ldquo;us&rdquo;) provides a service that generates, edits, and
-            packages browser extension code based on natural-language descriptions you provide. [Company
-            legal name, registered address, and contact email go here.]
+            packages browser extension code based on natural-language descriptions you provide. You can
+            reach us at automake0ff@gmail.com. [Company legal name and registered address go here — fill
+            in once the business is formally registered.]
           </p>
         </section>
         <section>
@@ -87,7 +88,7 @@ export default function TermsPage() {
         </section>
         <section>
           <h2 className="text-base font-medium text-ink-100">9. Contact</h2>
-          <p>Questions about these terms: [support email].</p>
+          <p>Questions about these terms: automake0ff@gmail.com.</p>
         </section>
       </div>
     </div>
