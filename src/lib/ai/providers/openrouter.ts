@@ -17,7 +17,7 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
  * https://openrouter.ai/models?max_price=0 for what's currently available
  * and set AI_MODEL to match if the default here stops working.
  */
-const DEFAULT_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+const DEFAULT_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct";
 export { DEFAULT_OPENROUTER_MODEL };
 
 export class OpenRouterProvider implements AiProvider {
