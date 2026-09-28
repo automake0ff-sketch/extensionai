@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/firebase/session";
 import { AiResponseValidationError, generateExtension } from "@/lib/ai/extension";
+import { stripMissingManifestIcons } from "@/lib/ai/manifest-fixups";
 import { getDefaultModelForRecording } from "@/lib/ai";
 import { getUsage, recordUsage } from "@/lib/usage";
 import { toFriendlyError } from "@/lib/errors";
@@ -67,7 +68,15 @@ export async function POST(request: Request) {
   track("generation_started", session.uid, { projectId, kind: "generate" });
 
   try {
-    const { result, tokensUsed, model: usedModel } = await generateExtension(prompt);
+    const { result: rawResult, tokensUsed, model: usedModel } = await generateExtension(prompt);
+
+    // Drop manifest references to icon files the AI never created, which
+    // would otherwise make Chrome refuse to load the extension.
+    const { files: safeFiles, removed: removedIcons } = stripMissingManifestIcons(rawResult.files);
+    if (removedIcons.length > 0) {
+      console.log("[generate] removed manifest icon references to missing files:", removedIcons.join(", "));
+    }
+    const result = { ...rawResult, files: safeFiles };
 
     assertWithinProjectLimits(result.files);
 

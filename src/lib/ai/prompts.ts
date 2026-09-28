@@ -48,6 +48,8 @@ Requirements:
   also include the compiled .js the manifest references, or write plain .js directly). For the
   MVP, prefer plain .js/.jsx/.html/.css files that Chrome can load unpacked with zero build step.
 - Never use eval(), new Function(), remote code execution, or inline event handlers in HTML.
+- Do NOT add "icons" or "default_icon" to the manifest. You cannot create image files, and a
+  manifest that references a missing icon makes Chrome refuse to load the extension.
 - Include a short README.md explaining what the extension does and how to load it unpacked.
 - Keep the file count reasonable (typically 4-8 files) and every file complete and self-contained.
 - If a popup is needed, include popup.html, and its JS/CSS as separate files referenced from it.`;

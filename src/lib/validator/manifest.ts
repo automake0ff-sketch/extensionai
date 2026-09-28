@@ -203,8 +203,21 @@ export function validateReferencedFiles(files: ProjectFile[]): ValidationIssue[]
   const background = manifest.background as { service_worker?: string } | undefined;
   if (background?.service_worker) referenced.add(background.service_worker);
 
-  const action = manifest.action as { default_popup?: string } | undefined;
+  const action = manifest.action as { default_popup?: string; default_icon?: unknown } | undefined;
   if (action?.default_popup) referenced.add(action.default_popup);
+
+  // Chrome refuses to load an extension whose manifest points at a missing
+  // icon, so treat icon references like any other required file.
+  const collectIcons = (v: unknown) => {
+    if (typeof v === "string") referenced.add(v);
+    else if (v && typeof v === "object" && !Array.isArray(v)) {
+      Object.values(v as Record<string, unknown>).forEach((p) => {
+        if (typeof p === "string") referenced.add(p);
+      });
+    }
+  };
+  collectIcons(manifest.icons);
+  collectIcons(action?.default_icon);
 
   const contentScripts = Array.isArray(manifest.content_scripts)
     ? (manifest.content_scripts as { js?: string[]; css?: string[] }[])
