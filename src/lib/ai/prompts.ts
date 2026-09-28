@@ -37,6 +37,10 @@ Respond with ONLY a JSON object (no prose, no markdown fences) matching:
   "files": [ { "path": string, "content": string } ]
 }
 
+The output MUST be strictly valid JSON. Every file's "content" is a JSON string, so escape
+newlines as backslash-n, double quotes as backslash-quote, and every literal backslash as two
+backslashes (a regular expression containing backslash-d must appear as two backslashes then d).
+
 Requirements:
 - Always include a valid "manifest.json" with "manifest_version": 3, "name", "version" ("1.0.0"
   unless told otherwise), "description", and only the permissions/host_permissions from the plan.

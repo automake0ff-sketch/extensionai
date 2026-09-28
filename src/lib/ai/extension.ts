@@ -29,6 +29,10 @@ export class AiResponseValidationError extends Error {
   }
 }
 
+// Only retry the Coder if less than this much of the request has elapsed,
+// so a retry can't push the whole request past the 300s platform limit.
+const RETRY_BUDGET_MS = 110_000;
+
 interface GenerateExtensionResult {
   result: ExtensionGenerationResult;
   tokensUsed: number;
@@ -42,6 +46,7 @@ interface GenerateExtensionResult {
  */
 export async function generateExtension(prompt: string): Promise<GenerateExtensionResult> {
   const provider = getAiProvider();
+  const startedAt = Date.now();
 
   const architectResponse = await provider.complete({
     system: ARCHITECT_PROMPT,
@@ -59,30 +64,58 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
     );
   }
 
-  const coderResponse = await provider.complete({
+  const coderUserContent = `User request: ${prompt}\n\nArchitect plan:\n${JSON.stringify(plan, null, 2)}`;
+
+  let coderResponse = await provider.complete({
     system: CODER_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `User request: ${prompt}\n\nArchitect plan:\n${JSON.stringify(plan, null, 2)}`,
-      },
-    ],
+    messages: [{ role: "user", content: coderUserContent }],
     maxTokens: 8000,
   });
+  let coderTokens = coderResponse.tokensUsed;
 
   let generated;
   try {
     generated = extensionGenerationSchema.parse(extractJson(coderResponse.text));
-  } catch (err) {
-    throw new AiResponseValidationError(
-      `Coder response failed validation: ${(err as Error).message}`,
-      coderResponse.text
-    );
+  } catch (firstErr) {
+    // One retry, only if there's time left inside the serverless limit
+    // (each provider call can take up to ~140s). The model usually fixes
+    // its own malformed JSON when told exactly what was wrong.
+    if (Date.now() - startedAt > RETRY_BUDGET_MS) {
+      throw new AiResponseValidationError(
+        `Coder response failed validation: ${(firstErr as Error).message}`,
+        coderResponse.text
+      );
+    }
+    console.warn("[generate] coder output invalid, retrying once:", (firstErr as Error).message);
+    coderResponse = await provider.complete({
+      system: CODER_PROMPT,
+      messages: [
+        { role: "user", content: coderUserContent },
+        { role: "assistant", content: coderResponse.text },
+        {
+          role: "user",
+          content:
+            `Your previous response could not be used: ${(firstErr as Error).message}\n\n` +
+            "Respond again with ONLY the complete JSON object, strictly valid JSON. Escape newlines " +
+            "as backslash-n, double quotes as backslash-quote, and every literal backslash as two backslashes.",
+        },
+      ],
+      maxTokens: 8000,
+    });
+    coderTokens += coderResponse.tokensUsed;
+    try {
+      generated = extensionGenerationSchema.parse(extractJson(coderResponse.text));
+    } catch (err) {
+      throw new AiResponseValidationError(
+        `Coder response failed validation after retry: ${(err as Error).message}`,
+        coderResponse.text
+      );
+    }
   }
 
   return {
     result: generated,
-    tokensUsed: architectResponse.tokensUsed + coderResponse.tokensUsed,
+    tokensUsed: architectResponse.tokensUsed + coderTokens,
     model: coderResponse.model,
   };
 }
