@@ -17,6 +17,7 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
  * https://openrouter.ai/models?max_price=0 for what's currently available
  * and set AI_MODEL to match if the default here stops working.
  */
+const REQUEST_TIMEOUT_MS = 140_000;
 const DEFAULT_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct";
 export { DEFAULT_OPENROUTER_MODEL };
 
@@ -30,24 +31,42 @@ export class OpenRouterProvider implements AiProvider {
   }
 
   async complete(request: AiCompletionRequest): Promise<AiCompletionResult> {
-    const res = await fetch(OPENROUTER_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-        // Optional, but OpenRouter's docs ask for this to attribute usage —
-        // doesn't affect functionality if left generic.
-        "X-Title": "ExtenAI",
-      },
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: request.maxTokens ?? 8000,
-        messages: [
-          { role: "system", content: request.system },
-          ...request.messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-      }),
-    });
+    const startedAt = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(OPENROUTER_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+          // Optional, but OpenRouter's docs ask for this to attribute usage —
+          // doesn't affect functionality if left generic.
+          "X-Title": "ExtenAI",
+        },
+        // Two of these calls run back to back per generation (Architect,
+        // then Coder) inside a 300s serverless limit. Cap each one so a
+        // stalled provider produces a clean, catchable error instead of the
+        // platform killing the whole request with a plain-text 504.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: request.maxTokens ?? 8000,
+          // Prefer the fastest available provider for this model rather than
+          // the cheapest, which is often the most congested.
+          provider: { sort: "throughput" },
+          messages: [
+            { role: "system", content: request.system },
+            ...request.messages.map((m) => ({ role: m.role, content: m.content })),
+          ],
+        }),
+      });
+    } catch (err) {
+      const elapsed = Math.round((Date.now() - startedAt) / 1000);
+      if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+        throw new Error(`OpenRouter request timed out after ${elapsed}s (model ${this.model}).`);
+      }
+      throw err;
+    }
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -55,6 +74,7 @@ export class OpenRouterProvider implements AiProvider {
     }
 
     const data = await res.json();
+    console.log(`[openrouter] ${this.model} responded in ${Math.round((Date.now() - startedAt) / 1000)}s`);
     const text = data.choices?.[0]?.message?.content ?? "";
     const tokensUsed = (data.usage?.prompt_tokens ?? 0) + (data.usage?.completion_tokens ?? 0);
 

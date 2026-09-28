@@ -41,8 +41,17 @@ export default function NewProjectPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, prompt }),
       });
-      const genData = await genRes.json();
-      if (!genRes.ok) throw new Error(genData.error ?? "We couldn't generate your extension.");
+      // A platform-level timeout returns plain text, not JSON — don't let
+      // that surface as a cryptic "Unexpected token" parse error.
+      const genData = await genRes.json().catch(() => null);
+      if (!genRes.ok) {
+        throw new Error(
+          genData?.error ??
+            (genRes.status === 504
+              ? "Generation took too long and was stopped. Please try again, ideally with a shorter or simpler request."
+              : "We couldn't generate your extension. Please try again.")
+        );
+      }
 
       router.push(`/projects/${projectId}`);
     } catch (err) {
