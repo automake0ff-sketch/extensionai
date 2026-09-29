@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OpenRouterProvider } from "../openrouter";
+import { FALLBACK_FREE_MODELS, OpenRouterProvider } from "../openrouter";
 
 describe("OpenRouterProvider", () => {
   afterEach(() => {
@@ -59,5 +59,54 @@ describe("OpenRouterProvider", () => {
     const result = await provider.complete({ system: "s", messages: [] });
     expect(result.tokensUsed).toBe(0);
     expect(result.text).toBe("ok");
+  });
+
+  it("falls back to the next free model when one has been retired", async () => {
+    const retiredBody =
+      '{"error":{"message":"This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-coder","code":404}}';
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 404, text: async () => retiredBody })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          model: FALLBACK_FREE_MODELS[1],
+          choices: [{ message: { content: "recovered" } }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const provider = new OpenRouterProvider("test-key", "qwen/qwen3-coder:free");
+    const result = await provider.complete({ system: "s", messages: [] });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).model).toBe("qwen/qwen3-coder:free");
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).model).toBe(FALLBACK_FREE_MODELS[0]);
+    expect(result.text).toBe("recovered");
+  });
+
+  it("does not fall back, and reports the real error, on a non-retirement failure", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 402,
+      text: async () => '{"error":"insufficient credits"}',
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const provider = new OpenRouterProvider("test-key", "qwen/qwen3-coder:free");
+    await expect(provider.complete({ system: "s", messages: [] })).rejects.toThrow(/402/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws the last retirement error if every fallback candidate is also retired", async () => {
+    const retiredBody = '{"error":{"message":"This model is unavailable for free.","code":404}}';
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => retiredBody })
+    );
+
+    const provider = new OpenRouterProvider("test-key", "qwen/qwen3-coder:free");
+    await expect(provider.complete({ system: "s", messages: [] })).rejects.toThrow(/404/);
   });
 });
