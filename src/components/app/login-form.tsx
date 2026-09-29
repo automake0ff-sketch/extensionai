@@ -123,7 +123,16 @@ export function LoginForm() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
+    // translate="no" + notranslate: the browser's built-in page translator
+    // (or a translate extension) rewrites text nodes in this subtree
+    // directly, outside React's control. When React then re-renders (e.g.
+    // to show a login error), it can no longer find the DOM nodes it
+    // expects and throws "Failed to execute 'insertBefore' on 'Node'",
+    // which crashed straight to the error boundary. Opting this form out
+    // of translation is the standard fix -- confirmed via a real browser
+    // console trace showing Chrome's translate_http stylesheet loading
+    // right before the crash.
+    <div translate="no" className="notranslate flex flex-1 items-center justify-center px-6 py-16">
       <div className="w-full max-w-sm">
         <Link href="/" className="mb-8 flex items-center justify-center gap-2">
           <ExtenAIMark className="h-6 w-6 text-accent" />
