@@ -18,7 +18,14 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
  * and set AI_MODEL to match if the default here stops working.
  */
 const REQUEST_TIMEOUT_MS = 140_000;
-const DEFAULT_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct";
+// qwen/qwen3-coder:free requires "Enable training and logging" turned on
+// in the OpenRouter account's privacy settings (openrouter.ai/settings/privacy)
+// -- without it every request 404s with "No endpoints found matching your
+// data policy". This applies to OpenRouter's free models in general, not
+// anything specific to this one. Also note free-tier request caps: 20/min,
+// and 50/day total across all free models unless the account has ever
+// purchased credits (then 1000/day) -- watch for 429s under real load.
+const DEFAULT_OPENROUTER_MODEL = "qwen/qwen3-coder:free";
 export { DEFAULT_OPENROUTER_MODEL };
 
 export class OpenRouterProvider implements AiProvider {
