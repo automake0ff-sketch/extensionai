@@ -21,6 +21,14 @@ export interface AiCompletionRequest {
   maxTokens?: number;
   /** Hint that the caller expects raw JSON back (no prose, no code fences). */
   jsonMode?: boolean;
+  /**
+   * Caller-supplied budget for this specific call, in ms. Lets a caller that
+   * knows how much of a larger time limit (e.g. a 300s serverless function)
+   * is left give a slow call every remaining second instead of an arbitrary
+   * fixed per-call timeout. Providers should fall back to their own default
+   * when this is omitted.
+   */
+  timeoutMs?: number;
 }
 
 export interface AiCompletionResult {

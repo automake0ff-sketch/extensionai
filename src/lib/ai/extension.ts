@@ -31,7 +31,25 @@ export class AiResponseValidationError extends Error {
 
 // Only retry the Coder if less than this much of the request has elapsed,
 // so a retry can't push the whole request past the 300s platform limit.
-const RETRY_BUDGET_MS = 110_000;
+// Vercel's serverless function limit is 300s. Reserve a slice of that for
+// our own work (parsing, Firestore writes) and for round-trip overhead, and
+// give the rest to whichever AI call is running -- rather than splitting it
+// into two fixed per-call timeouts, which is what caused a real production
+// failure: the free-tier model is sometimes slow, one call ran past a fixed
+// 140s cap and the whole generation aborted with time to spare in the
+// platform's actual 300s budget. Architect has consistently been fast in
+// production logs (10-50s), so in the normal case this gives the Coder call
+// (the slow, large one) nearly the whole budget instead of a fixed slice.
+const TOTAL_BUDGET_MS = 280_000;
+const MIN_CALL_TIMEOUT_MS = 20_000;
+// Only attempt the Coder retry if doing so would still leave it a
+// meaningful amount of time -- a retry with a few seconds left is just
+// going to time out again and burn the platform limit for nothing.
+const MIN_RETRY_TIME_MS = 40_000;
+
+export function remainingBudgetMs(startedAt: number): number {
+  return Math.max(MIN_CALL_TIMEOUT_MS, TOTAL_BUDGET_MS - (Date.now() - startedAt));
+}
 
 interface GenerateExtensionResult {
   result: ExtensionGenerationResult;
@@ -52,6 +70,7 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
     system: ARCHITECT_PROMPT,
     messages: [{ role: "user", content: prompt }],
     maxTokens: 2000,
+    timeoutMs: remainingBudgetMs(startedAt),
   });
 
   let plan;
@@ -70,6 +89,7 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
     system: CODER_PROMPT,
     messages: [{ role: "user", content: coderUserContent }],
     maxTokens: 8000,
+    timeoutMs: remainingBudgetMs(startedAt),
   });
   let coderTokens = coderResponse.tokensUsed;
 
@@ -77,10 +97,10 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
   try {
     generated = extensionGenerationSchema.parse(extractJson(coderResponse.text));
   } catch (firstErr) {
-    // One retry, only if there's time left inside the serverless limit
-    // (each provider call can take up to ~140s). The model usually fixes
-    // its own malformed JSON when told exactly what was wrong.
-    if (Date.now() - startedAt > RETRY_BUDGET_MS) {
+    // One retry, only if there's meaningfully enough of the budget left.
+    // The model usually fixes its own malformed JSON when told exactly
+    // what was wrong.
+    if (remainingBudgetMs(startedAt) < MIN_RETRY_TIME_MS) {
       throw new AiResponseValidationError(
         `Coder response failed validation: ${(firstErr as Error).message}`,
         coderResponse.text
@@ -101,6 +121,7 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
         },
       ],
       maxTokens: 8000,
+      timeoutMs: remainingBudgetMs(startedAt),
     });
     coderTokens += coderResponse.tokensUsed;
     try {

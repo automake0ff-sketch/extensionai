@@ -86,7 +86,7 @@ export class OpenRouterProvider implements AiProvider {
           // then Coder) inside a 300s serverless limit. Cap each one so a
           // stalled provider produces a clean, catchable error instead of the
           // platform killing the whole request with a plain-text 504.
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
           body: JSON.stringify({
             model,
             max_tokens: request.maxTokens ?? 8000,
@@ -102,7 +102,9 @@ export class OpenRouterProvider implements AiProvider {
       } catch (err) {
         const elapsed = Math.round((Date.now() - startedAt) / 1000);
         if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
-          throw new Error(`OpenRouter request timed out after ${elapsed}s (model ${model}).`);
+          throw new Error(
+            `OpenRouter request timed out after ${elapsed}s (model ${model}, budget ${Math.round((request.timeoutMs ?? REQUEST_TIMEOUT_MS) / 1000)}s).`
+          );
         }
         throw err;
       }
