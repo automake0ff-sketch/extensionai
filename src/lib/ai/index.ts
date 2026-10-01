@@ -14,9 +14,16 @@ export function getAiProvider(): AiProvider {
   if (cachedProvider) return cachedProvider;
 
   const providerName = process.env.AI_PROVIDER ?? "anthropic";
-  const apiKey = process.env.AI_API_KEY;
+  // AI_API_KEY can be a single key or several separated by commas. Multiple
+  // keys only matter for the openrouter provider below (OpenRouterProvider
+  // rotates to the next one when a key hits its free-tier rate/credit
+  // limit) -- anthropic keeps using a single key.
+  const apiKeys = (process.env.AI_API_KEY ?? "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
 
-  if (!apiKey) {
+  if (apiKeys.length === 0) {
     throw new Error(
       "AI_API_KEY is not set. Configure it in your environment (see .env.example)."
     );
@@ -24,10 +31,10 @@ export function getAiProvider(): AiProvider {
 
   switch (providerName) {
     case "anthropic":
-      cachedProvider = new AnthropicProvider(apiKey, process.env.AI_MODEL);
+      cachedProvider = new AnthropicProvider(apiKeys[0], process.env.AI_MODEL);
       break;
     case "openrouter":
-      cachedProvider = new OpenRouterProvider(apiKey, process.env.AI_MODEL);
+      cachedProvider = new OpenRouterProvider(apiKeys, process.env.AI_MODEL);
       break;
     default:
       throw new Error(`Unknown AI_PROVIDER "${providerName}".`);

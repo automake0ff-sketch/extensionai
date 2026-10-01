@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/firebase/session";
-import { getGithubConnection, getProfile } from "@/lib/firebase/firestore";
+import { getGithubConnection, getProfile, getWaitlistStats } from "@/lib/firebase/firestore";
 import { getUsage } from "@/lib/usage";
+import { isAdminEmail } from "@/lib/admin";
 import { GithubConnectionCard } from "@/components/app/github-connection-card";
 import { BillingSection } from "@/components/app/billing-section";
 import { CheckCircle2, XCircle } from "lucide-react";
@@ -15,6 +16,8 @@ export default async function SettingsPage({
   const profile = await getProfile(session!.uid);
   const usage = await getUsage(session!.uid, profile?.plan ?? "free");
   const githubConnection = await getGithubConnection(session!.uid);
+  const showAdmin = isAdminEmail(session!.email);
+  const waitlistStats = showAdmin ? await getWaitlistStats() : null;
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-10">
@@ -51,6 +54,31 @@ export default async function SettingsPage({
       </section>
 
       <GithubConnectionCard githubLogin={githubConnection?.githubLogin ?? null} />
+
+      {showAdmin && waitlistStats && (
+        <section className="mt-4 rounded-2xl border border-ink-line bg-ink-raised p-5">
+          <h2 className="text-sm font-medium">Waitlist (admin only)</h2>
+          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-xl border border-ink-line bg-ink px-3 py-4">
+              <p className="text-2xl font-semibold">{waitlistStats.total}</p>
+              <p className="mt-1 text-xs text-ink-dim">Total</p>
+            </div>
+            <div className="rounded-xl border border-ink-line bg-ink px-3 py-4">
+              <p className="text-2xl font-semibold">{waitlistStats.pending}</p>
+              <p className="mt-1 text-xs text-ink-dim">Pending</p>
+            </div>
+            <div className="rounded-xl border border-ink-line bg-ink px-3 py-4">
+              <p className="text-2xl font-semibold">{waitlistStats.approved}</p>
+              <p className="mt-1 text-xs text-ink-dim">Approved</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-ink-dim">
+            Visible only to admin emails (ADMIN_EMAILS). Approve someone by setting their{" "}
+            <code>waitlist/&#123;email&#125;</code> doc&apos;s <code>status</code> to{" "}
+            <code>&quot;approved&quot;</code> in Firestore, or add them to BETA_ALLOWED_EMAILS.
+          </p>
+        </section>
+      )}
     </div>
   );
 }

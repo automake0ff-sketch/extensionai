@@ -86,6 +86,30 @@ export async function joinWaitlist(
   return { alreadyOnList: false };
 }
 
+export interface WaitlistStats {
+  total: number;
+  pending: number;
+  approved: number;
+}
+
+/**
+ * Uses Firestore's count() aggregation (a single small read, not one read
+ * per document) so this stays cheap no matter how large the waitlist gets.
+ */
+export async function getWaitlistStats(): Promise<WaitlistStats> {
+  const col = adminDb().collection("waitlist");
+  const [totalSnap, pendingSnap, approvedSnap] = await Promise.all([
+    col.count().get(),
+    col.where("status", "==", "pending").count().get(),
+    col.where("status", "==", "approved").count().get(),
+  ]);
+  return {
+    total: totalSnap.data().count,
+    pending: pendingSnap.data().count,
+    approved: approvedSnap.data().count,
+  };
+}
+
 export async function isEmailApproved(email: string): Promise<boolean> {
   const snap = await adminDb().collection("waitlist").doc(normalizeEmail(email)).get();
   return snap.exists && snap.data()?.status === "approved";

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FALLBACK_FREE_MODELS, OpenRouterProvider } from "../openrouter";
+import { DEFAULT_OPENROUTER_MODEL, FALLBACK_FREE_MODELS, OpenRouterProvider } from "../openrouter";
 
 describe("OpenRouterProvider", () => {
   afterEach(() => {
@@ -108,5 +108,78 @@ describe("OpenRouterProvider", () => {
 
     const provider = new OpenRouterProvider("test-key", "qwen/qwen3-coder:free");
     await expect(provider.complete({ system: "s", messages: [] })).rejects.toThrow(/404/);
+  });
+
+  it("rotates to the next API key when the first is rate-limited (429)", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, text: async () => '{"error":"rate limited"}' })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          model: DEFAULT_OPENROUTER_MODEL,
+          choices: [{ message: { content: "from key 2" } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const provider = new OpenRouterProvider(["key-one", "key-two"]);
+    const result = await provider.complete({ system: "s", messages: [] });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer key-one");
+    expect(mockFetch.mock.calls[1][1].headers.Authorization).toBe("Bearer key-two");
+    // Rotating keys restarts from the configured model, not wherever the
+    // previous key's model loop left off.
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).model).toBe(DEFAULT_OPENROUTER_MODEL);
+    expect(result.text).toBe("from key 2");
+  });
+
+  it("rotates keys on 402 (out of credits) and on 401 (invalid key) too", async () => {
+    for (const status of [401, 402]) {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status, text: async () => "{}" })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const provider = new OpenRouterProvider(["key-one", "key-two"]);
+      const result = await provider.complete({ system: "s", messages: [] });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(result.text).toBe("ok");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("throws once every key is exhausted, reporting the last key's error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 429, text: async () => '{"error":"rate limited"}' })
+    );
+
+    const provider = new OpenRouterProvider(["key-one", "key-two"]);
+    await expect(provider.complete({ system: "s", messages: [] })).rejects.toThrow(/429/);
+  });
+
+  it("ignores blank entries and trims whitespace when given a key array", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+      })
+    );
+    const provider = new OpenRouterProvider([" key-one ", "", "  "]);
+    await provider.complete({ system: "s", messages: [] });
+    const mockFetch = vi.mocked(fetch);
+    expect(mockFetch.mock.calls[0][1]!.headers!["Authorization" as never]).toBe("Bearer key-one");
+  });
+
+  it("throws if constructed with no usable keys", () => {
+    expect(() => new OpenRouterProvider([" ", ""])).toThrow(/at least one API key/);
   });
 });

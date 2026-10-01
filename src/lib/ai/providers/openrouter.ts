@@ -33,9 +33,10 @@ const REQUEST_TIMEOUT_MS = 140_000;
 // model here: (1) the OpenRouter account needs "Enable training and
 // logging" on in Privacy Settings (openrouter.ai/settings/privacy), or
 // every free-model request 404s with "No endpoints found matching your
-// data policy"; (2) free-tier request caps are 20/min and 50/day total
-// across ALL free models unless the account has ever purchased credits
-// (then 1000/day) -- watch for 429s under real load.
+// data policy"; (2) free-tier request caps are 20/min and 50/day total per
+// API KEY across ALL free models unless that key's account has ever
+// purchased credits (then 1000/day) -- this is exactly what AI_API_KEY's
+// multi-key support right below is for.
 //
 // Re-check what's actually free (this list goes stale too) via:
 //   curl https://openrouter.ai/api/v1/models | jq '.data[] | select(.pricing.prompt=="0") | .id'
@@ -52,12 +53,34 @@ function isModelRetiredError(status: number, body: string): boolean {
   return status === 404 && /unavailable for free|no endpoints found/i.test(body);
 }
 
+/**
+ * True when the failure is about the *key/account*, not the model: the
+ * free-tier daily/minute cap was hit (429), the account has no credits for
+ * a call that needs them (402), or the key itself is invalid/revoked (401).
+ * In every one of these, retrying the same key with a different model won't
+ * help -- only a different key can.
+ */
+function isKeyExhaustedError(status: number): boolean {
+  return status === 401 || status === 402 || status === 429;
+}
+
 export class OpenRouterProvider implements AiProvider {
-  private apiKey: string;
+  private apiKeys: string[];
   private model: string;
 
-  constructor(apiKey: string, model = DEFAULT_OPENROUTER_MODEL) {
-    this.apiKey = apiKey;
+  /**
+   * apiKey can be a single key or an array of keys. Multiple keys are tried
+   * in order: when one is rate-limited, out of credits, or invalid, the
+   * next one is used automatically -- this is what lets a stack of several
+   * free OpenRouter accounts' keys behave like one pool with a much higher
+   * combined daily cap, instead of the whole generation failing the moment
+   * the first key's free-tier allowance (50 or 1000 requests/day) runs out.
+   */
+  constructor(apiKey: string | string[], model = DEFAULT_OPENROUTER_MODEL) {
+    this.apiKeys = (Array.isArray(apiKey) ? apiKey : [apiKey]).map((k) => k.trim()).filter(Boolean);
+    if (this.apiKeys.length === 0) {
+      throw new Error("OpenRouterProvider requires at least one API key.");
+    }
     this.model = model;
   }
 
@@ -68,67 +91,81 @@ export class OpenRouterProvider implements AiProvider {
     const candidates = [this.model, ...FALLBACK_FREE_MODELS.filter((m) => m !== this.model)];
     let lastError: Error | undefined;
 
-    for (let i = 0; i < candidates.length; i++) {
-      const model = candidates[i];
-      const startedAt = Date.now();
-      let res: Response;
-      try {
-        res = await fetch(OPENROUTER_API_URL, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            "Content-Type": "application/json",
-            // Optional, but OpenRouter's docs ask for this to attribute usage —
-            // doesn't affect functionality if left generic.
-            "X-Title": "ExtenAI",
-          },
-          // Two of these calls run back to back per generation (Architect,
-          // then Coder) inside a 300s serverless limit. Cap each one so a
-          // stalled provider produces a clean, catchable error instead of the
-          // platform killing the whole request with a plain-text 504.
-          signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
-          body: JSON.stringify({
-            model,
-            max_tokens: request.maxTokens ?? 8000,
-            // Prefer the fastest available provider for this model rather than
-            // the cheapest, which is often the most congested.
-            provider: { sort: "throughput" },
-            messages: [
-              { role: "system", content: request.system },
-              ...request.messages.map((m) => ({ role: m.role, content: m.content })),
-            ],
-          }),
-        });
-      } catch (err) {
-        const elapsed = Math.round((Date.now() - startedAt) / 1000);
-        if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
-          throw new Error(
-            `OpenRouter request timed out after ${elapsed}s (model ${model}, budget ${Math.round((request.timeoutMs ?? REQUEST_TIMEOUT_MS) / 1000)}s).`
-          );
-        }
-        throw err;
-      }
+    for (let k = 0; k < this.apiKeys.length; k++) {
+      const apiKey = this.apiKeys[k];
+      const keyLabel = this.apiKeys.length > 1 ? `key #${k + 1}/${this.apiKeys.length}` : "key";
 
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        if (isModelRetiredError(res.status, body) && i < candidates.length - 1) {
-          console.warn(`[openrouter] ${model} no longer free, falling back to ${candidates[i + 1]}`);
+      for (let i = 0; i < candidates.length; i++) {
+        const model = candidates[i];
+        const startedAt = Date.now();
+        let res: Response;
+        try {
+          res = await fetch(OPENROUTER_API_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              // Optional, but OpenRouter's docs ask for this to attribute usage —
+              // doesn't affect functionality if left generic.
+              "X-Title": "ExtenAI",
+            },
+            // Two of these calls run back to back per generation (Architect,
+            // then Coder) inside a 300s serverless limit. Cap each one so a
+            // stalled provider produces a clean, catchable error instead of the
+            // platform killing the whole request with a plain-text 504.
+            signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
+            body: JSON.stringify({
+              model,
+              max_tokens: request.maxTokens ?? 8000,
+              // Prefer the fastest available provider for this model rather than
+              // the cheapest, which is often the most congested.
+              provider: { sort: "throughput" },
+              messages: [
+                { role: "system", content: request.system },
+                ...request.messages.map((m) => ({ role: m.role, content: m.content })),
+              ],
+            }),
+          });
+        } catch (err) {
+          const elapsed = Math.round((Date.now() - startedAt) / 1000);
+          if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+            throw new Error(
+              `OpenRouter request timed out after ${elapsed}s (model ${model}, budget ${Math.round((request.timeoutMs ?? REQUEST_TIMEOUT_MS) / 1000)}s).`
+            );
+          }
+          throw err;
+        }
+
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
           lastError = new Error(`OpenRouter API request failed (${res.status}): ${body.slice(0, 300)}`);
-          continue;
+
+          if (isKeyExhaustedError(res.status) && k < this.apiKeys.length - 1) {
+            console.warn(`[openrouter] ${keyLabel} exhausted (${res.status}), rotating to next key`);
+            break; // stop trying models on this key, move to the next key
+          }
+          if (isModelRetiredError(res.status, body) && i < candidates.length - 1) {
+            console.warn(`[openrouter] ${model} no longer free, falling back to ${candidates[i + 1]}`);
+            continue; // same key, next model
+          }
+          // Not something rotating a key or model can fix (or we're out of
+          // both) -- surface the real error instead of masking it.
+          throw lastError;
         }
-        throw new Error(`OpenRouter API request failed (${res.status}): ${body.slice(0, 300)}`);
+
+        const data = await res.json();
+        console.log(
+          `[openrouter] ${model} (${keyLabel}) responded in ${Math.round((Date.now() - startedAt) / 1000)}s`
+        );
+        const text = data.choices?.[0]?.message?.content ?? "";
+        const tokensUsed = (data.usage?.prompt_tokens ?? 0) + (data.usage?.completion_tokens ?? 0);
+
+        return { text, tokensUsed, model: data.model ?? model };
       }
-
-      const data = await res.json();
-      console.log(`[openrouter] ${model} responded in ${Math.round((Date.now() - startedAt) / 1000)}s`);
-      const text = data.choices?.[0]?.message?.content ?? "";
-      const tokensUsed = (data.usage?.prompt_tokens ?? 0) + (data.usage?.completion_tokens ?? 0);
-
-      return { text, tokensUsed, model: data.model ?? model };
     }
 
     // Unreachable in practice (the loop always returns or throws), but keeps
-    // TypeScript happy and gives a sane error if it ever is reached.
-    throw lastError ?? new Error("OpenRouter API request failed: no model candidates available.");
+    // TypeScript happy and gives a sane error if every key and model failed.
+    throw lastError ?? new Error("OpenRouter API request failed: no key/model candidates available.");
   }
 }
