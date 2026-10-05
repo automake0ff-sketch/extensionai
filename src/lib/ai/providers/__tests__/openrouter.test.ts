@@ -86,16 +86,16 @@ describe("OpenRouterProvider", () => {
     expect(result.text).toBe("recovered");
   });
 
-  it("does not fall back, and reports the real error, on a non-retirement failure", async () => {
+  it("does not retry at all on a genuinely non-retryable failure (not 401/402/404/429)", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: false,
-      status: 402,
-      text: async () => '{"error":"insufficient credits"}',
+      status: 500,
+      text: async () => '{"error":"internal server error"}',
     });
     vi.stubGlobal("fetch", mockFetch);
 
     const provider = new OpenRouterProvider("test-key", "qwen/qwen3-coder:free");
-    await expect(provider.complete({ system: "s", messages: [] })).rejects.toThrow(/402/);
+    await expect(provider.complete({ system: "s", messages: [] })).rejects.toThrow(/500/);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
@@ -110,11 +110,25 @@ describe("OpenRouterProvider", () => {
     await expect(provider.complete({ system: "s", messages: [] })).rejects.toThrow(/404/);
   });
 
-  it("rotates to the next API key when the first is rate-limited (429)", async () => {
-    const mockFetch = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: false, status: 429, text: async () => '{"error":"rate limited"}' })
-      .mockResolvedValueOnce({
+  // Candidate models tried per key: the configured model plus every entry
+  // in FALLBACK_FREE_MODELS not equal to it. Computed from the real list so
+  // these tests don't need updating every time a model is added/removed.
+  const MODELS_PER_KEY = [
+    DEFAULT_OPENROUTER_MODEL,
+    ...FALLBACK_FREE_MODELS.filter((m) => m !== DEFAULT_OPENROUTER_MODEL),
+  ].length;
+
+  it("tries every model on the current key before rotating to the next key on 429", async () => {
+    // A 429 is often the MODEL being congested upstream (shared across
+    // everyone on OpenRouter's free tier), not this key's own quota -- so a
+    // different model on the SAME key should be tried before burning
+    // through other keys. Confirmed in production: all configured keys got
+    // the same "temporarily rate-limited upstream" 429 for the same model.
+    const rateLimited = { ok: false, status: 429, text: async () => '{"error":"rate limited"}' };
+    const mockFetch = vi.fn().mockImplementation((_url, init) => {
+      const isKeyOne = init.headers.Authorization === "Bearer key-one";
+      if (isKeyOne) return Promise.resolve(rateLimited); // every model fails on key-one
+      return Promise.resolve({
         ok: true,
         json: async () => ({
           model: DEFAULT_OPENROUTER_MODEL,
@@ -122,34 +136,39 @@ describe("OpenRouterProvider", () => {
           usage: { prompt_tokens: 1, completion_tokens: 1 },
         }),
       });
+    });
     vi.stubGlobal("fetch", mockFetch);
 
     const provider = new OpenRouterProvider(["key-one", "key-two"]);
     const result = await provider.complete({ system: "s", messages: [] });
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(mockFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer key-one");
-    expect(mockFetch.mock.calls[1][1].headers.Authorization).toBe("Bearer key-two");
+    expect(mockFetch).toHaveBeenCalledTimes(MODELS_PER_KEY + 1);
+    for (let i = 0; i < MODELS_PER_KEY; i++) {
+      expect(mockFetch.mock.calls[i][1].headers.Authorization).toBe("Bearer key-one");
+      expect(JSON.parse(mockFetch.mock.calls[i][1].body).model).toBe(
+        [DEFAULT_OPENROUTER_MODEL, ...FALLBACK_FREE_MODELS.filter((m) => m !== DEFAULT_OPENROUTER_MODEL)][i]
+      );
+    }
+    const lastCall = mockFetch.mock.calls[MODELS_PER_KEY];
+    expect(lastCall[1].headers.Authorization).toBe("Bearer key-two");
     // Rotating keys restarts from the configured model, not wherever the
     // previous key's model loop left off.
-    expect(JSON.parse(mockFetch.mock.calls[1][1].body).model).toBe(DEFAULT_OPENROUTER_MODEL);
+    expect(JSON.parse(lastCall[1].body).model).toBe(DEFAULT_OPENROUTER_MODEL);
     expect(result.text).toBe("from key 2");
   });
 
-  it("rotates keys on 402 (out of credits) and on 401 (invalid key) too", async () => {
+  it("rotates keys on 402 (out of credits) and on 401 (invalid key) too, after exhausting models", async () => {
     for (const status of [401, 402]) {
-      const mockFetch = vi
-        .fn()
-        .mockResolvedValueOnce({ ok: false, status, text: async () => "{}" })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({ choices: [{ message: { content: "ok" } }] }),
-        });
+      const failed = { ok: false, status, text: async () => "{}" };
+      const mockFetch = vi.fn().mockImplementation((_url, init) => {
+        if (init.headers.Authorization === "Bearer key-one") return Promise.resolve(failed);
+        return Promise.resolve({ ok: true, json: async () => ({ choices: [{ message: { content: "ok" } }] }) });
+      });
       vi.stubGlobal("fetch", mockFetch);
 
       const provider = new OpenRouterProvider(["key-one", "key-two"]);
       const result = await provider.complete({ system: "s", messages: [] });
-      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenCalledTimes(MODELS_PER_KEY + 1);
       expect(result.text).toBe("ok");
       vi.unstubAllGlobals();
     }

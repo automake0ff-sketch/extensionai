@@ -41,9 +41,17 @@ const REQUEST_TIMEOUT_MS = 140_000;
 // Re-check what's actually free (this list goes stale too) via:
 //   curl https://openrouter.ai/api/v1/models | jq '.data[] | select(.pricing.prompt=="0") | .id'
 const DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free";
+// Deliberately spread across different providers/families (Qwen, InclusionAI,
+// Apodex), not just Qwen variants -- confirmed in production that when one
+// model gets congested upstream, it's plausible for the whole family/provider
+// to be congested together, and a different provider is more likely to be
+// unaffected. All confirmed free (pricing.prompt == "0") via a live query to
+// https://openrouter.ai/api/v1/models at the time this list was last updated.
 const FALLBACK_FREE_MODELS = [
   "qwen/qwen3.8-27b:free",
   "inclusionai/ling-3.0-flash-sante:free",
+  "apodex/apodex-1.1-mini:free",
+  "inclusionai/ling-3.1-flash",
   "dots-studio/dots-3-note-preview:free",
 ];
 export { DEFAULT_OPENROUTER_MODEL, FALLBACK_FREE_MODELS };
@@ -139,14 +147,22 @@ export class OpenRouterProvider implements AiProvider {
         if (!res.ok) {
           const body = await res.text().catch(() => "");
           lastError = new Error(`OpenRouter API request failed (${res.status}): ${body.slice(0, 300)}`);
+          const retryable = isKeyExhaustedError(res.status) || isModelRetiredError(res.status, body);
 
-          if (isKeyExhaustedError(res.status) && k < this.apiKeys.length - 1) {
-            console.warn(`[openrouter] ${keyLabel} exhausted (${res.status}), rotating to next key`);
-            break; // stop trying models on this key, move to the next key
-          }
-          if (isModelRetiredError(res.status, body) && i < candidates.length - 1) {
-            console.warn(`[openrouter] ${model} no longer free, falling back to ${candidates[i + 1]}`);
+          if (retryable && i < candidates.length - 1) {
+            // A 429 here is often the MODEL being congested upstream (shared
+            // across everyone on OpenRouter's free tier), not this key's own
+            // quota -- a different model is more likely to actually fix that
+            // than a different key would, so exhaust the model list for the
+            // current key before burning through other keys. Confirmed in
+            // production: all 3 configured keys got the same
+            // "temporarily rate-limited upstream" 429 for the same model.
+            console.warn(`[openrouter] ${model} failed (${res.status}) on ${keyLabel}, trying ${candidates[i + 1]}`);
             continue; // same key, next model
+          }
+          if (retryable && k < this.apiKeys.length - 1) {
+            console.warn(`[openrouter] ${keyLabel} exhausted every model, rotating to next key`);
+            break; // every model failed on this key -- try the next key, from its first model
           }
           // Not something rotating a key or model can fix (or we're out of
           // both) -- surface the real error instead of masking it.
