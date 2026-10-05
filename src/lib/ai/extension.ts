@@ -66,21 +66,59 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
   const provider = getAiProvider();
   const startedAt = Date.now();
 
-  const architectResponse = await provider.complete({
+  // 3000 (was 2000): a free/less-disciplined model can still run long in
+  // "notes" despite the prompt asking it not to, and a response truncated
+  // before its JSON closes is a hard failure ("Unexpected end of JSON
+  // input") with no way to salvage it -- more headroom makes that less
+  // likely to happen in the first place, and the retry below is the
+  // fallback for when it does anyway.
+  let architectResponse = await provider.complete({
     system: ARCHITECT_PROMPT,
     messages: [{ role: "user", content: prompt }],
-    maxTokens: 2000,
+    maxTokens: 3000,
     timeoutMs: remainingBudgetMs(startedAt),
   });
+  let architectTokens = architectResponse.tokensUsed;
 
   let plan;
   try {
     plan = architectPlanSchema.parse(extractJson(architectResponse.text));
-  } catch (err) {
-    throw new AiResponseValidationError(
-      `Architect response failed validation: ${(err as Error).message}`,
-      architectResponse.text
-    );
+  } catch (firstErr) {
+    // Same one-retry-with-feedback pattern as the Coder step below: this
+    // is the step that was missing it, and a truncated/malformed Architect
+    // response is exactly as recoverable as a Coder one.
+    if (remainingBudgetMs(startedAt) < MIN_RETRY_TIME_MS) {
+      throw new AiResponseValidationError(
+        `Architect response failed validation: ${(firstErr as Error).message}`,
+        architectResponse.text
+      );
+    }
+    console.warn("[generate] architect output invalid, retrying once:", (firstErr as Error).message);
+    architectResponse = await provider.complete({
+      system: ARCHITECT_PROMPT,
+      messages: [
+        { role: "user", content: prompt },
+        { role: "assistant", content: architectResponse.text },
+        {
+          role: "user",
+          content:
+            `Your previous response could not be used: ${(firstErr as Error).message}\n\n` +
+            "Respond again with ONLY the complete JSON object, strictly valid JSON, and keep " +
+            "\"notes\" to at most 2 short sentences so the response finishes well within budget.",
+        },
+      ],
+      maxTokens: 3000,
+      timeoutMs: remainingBudgetMs(startedAt),
+    });
+    architectTokens += architectResponse.tokensUsed;
+    try {
+      plan = architectPlanSchema.parse(extractJson(architectResponse.text));
+    } catch (err) {
+      throw new AiResponseValidationError(
+        `Architect response failed validation after retry: ${(err as Error).message}`,
+        architectResponse.text
+      );
+    }
   }
 
   const coderUserContent = `User request: ${prompt}\n\nArchitect plan:\n${JSON.stringify(plan, null, 2)}`;
@@ -136,7 +174,7 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
 
   return {
     result: generated,
-    tokensUsed: architectResponse.tokensUsed + coderTokens,
+    tokensUsed: architectTokens + coderTokens,
     model: coderResponse.model,
   };
 }

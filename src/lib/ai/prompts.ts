@@ -25,7 +25,11 @@ Respond with ONLY a JSON object (no prose, no markdown fences) matching:
 Rules:
 - Always target "manifest_version": 3.
 - Never request a permission the plan does not clearly need.
-- Prefer "activeTab" over broad host permissions when possible.`;
+- Prefer "activeTab" over broad host permissions when possible.
+- Keep "notes" to at most 2 short sentences. This response has a limited token
+  budget; a long "notes" field risks truncating the JSON before it closes, which
+  makes the whole response unusable. Every other field should also stay concise —
+  this is an internal plan for the Coder, not an explanation for the user.`;
 
 export const CODER_PROMPT = `You are the Coder for ExtenAI. You receive an Architect plan and must produce
 a complete, working Chrome extension (Manifest V3).
