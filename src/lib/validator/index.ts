@@ -1,5 +1,6 @@
 import type { ProjectFile, ValidationResult } from "@/lib/types";
 import { scanFileForSecurityIssues, validateManifest, validateReferencedFiles } from "./manifest";
+import { validateJsSyntax } from "./js-syntax";
 
 /**
  * Full "Extension health" check (spec section 15). Runs before ZIP export
@@ -14,6 +15,7 @@ export function validateProject(files: ProjectFile[]): ValidationResult {
     ]),
     ...validateReferencedFiles(files),
     ...files.flatMap((f) => scanFileForSecurityIssues(f)),
+    ...validateJsSyntax(files),
   ];
 
   const valid = !issues.some((issue) => issue.level === "error");

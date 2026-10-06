@@ -1,4 +1,5 @@
 import { getAiProvider } from "./index";
+import { validateJsSyntax } from "@/lib/validator/js-syntax";
 import {
   ARCHITECT_PROMPT,
   CODER_PROMPT,
@@ -131,45 +132,61 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
   });
   let coderTokens = coderResponse.tokensUsed;
 
-  let generated;
-  try {
-    generated = extensionGenerationSchema.parse(extractJson(coderResponse.text));
-  } catch (firstErr) {
-    // One retry, only if there's meaningfully enough of the budget left.
-    // The model usually fixes its own malformed JSON when told exactly
-    // what was wrong.
-    if (remainingBudgetMs(startedAt) < MIN_RETRY_TIME_MS) {
-      throw new AiResponseValidationError(
-        `Coder response failed validation: ${(firstErr as Error).message}`,
-        coderResponse.text
-      );
+  // At most one retry, checking both that the response is valid JSON AND
+  // that every .js file it contains actually parses as JavaScript. The
+  // latter was a real gap: a schema-valid response can still contain
+  // JS with a hard syntax error (confirmed in production: an unquoted
+  // hyphenated object key, `needs-improvement: {...}`, parsed as
+  // `needs - improvement` -- a SyntaxError that breaks the whole script),
+  // and nothing used to catch that before it reached the user as a
+  // generated extension that fails to even load in Chrome.
+  let generated: ExtensionGenerationResult | undefined;
+  let lastFailure: { message: string; raw: string } | undefined;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt === 1) {
+      if (remainingBudgetMs(startedAt) < MIN_RETRY_TIME_MS) break;
+      console.warn("[generate] coder output invalid, retrying once:", lastFailure!.message);
+      coderResponse = await provider.complete({
+        system: CODER_PROMPT,
+        messages: [
+          { role: "user", content: coderUserContent },
+          { role: "assistant", content: coderResponse.text },
+          {
+            role: "user",
+            content:
+              `Your previous response could not be used: ${lastFailure!.message}\n\n` +
+              "Respond again with ONLY the complete JSON object, strictly valid JSON. Escape newlines " +
+              "as backslash-n, double quotes as backslash-quote, and every literal backslash as two " +
+              "backslashes. Every .js file's \"content\" must also be syntactically valid JavaScript -- " +
+              "in particular, object keys containing a hyphen (e.g. needs-improvement) MUST be quoted " +
+              "as a string key, not written bare.",
+          },
+        ],
+        maxTokens: 8000,
+        timeoutMs: remainingBudgetMs(startedAt),
+      });
+      coderTokens += coderResponse.tokensUsed;
     }
-    console.warn("[generate] coder output invalid, retrying once:", (firstErr as Error).message);
-    coderResponse = await provider.complete({
-      system: CODER_PROMPT,
-      messages: [
-        { role: "user", content: coderUserContent },
-        { role: "assistant", content: coderResponse.text },
-        {
-          role: "user",
-          content:
-            `Your previous response could not be used: ${(firstErr as Error).message}\n\n` +
-            "Respond again with ONLY the complete JSON object, strictly valid JSON. Escape newlines " +
-            "as backslash-n, double quotes as backslash-quote, and every literal backslash as two backslashes.",
-        },
-      ],
-      maxTokens: 8000,
-      timeoutMs: remainingBudgetMs(startedAt),
-    });
-    coderTokens += coderResponse.tokensUsed;
+
     try {
-      generated = extensionGenerationSchema.parse(extractJson(coderResponse.text));
+      const candidate = extensionGenerationSchema.parse(extractJson(coderResponse.text));
+      const syntaxIssues = validateJsSyntax(candidate.files);
+      if (syntaxIssues.length > 0) {
+        throw new Error(syntaxIssues.map((i) => i.message).join("; "));
+      }
+      generated = candidate;
+      break;
     } catch (err) {
-      throw new AiResponseValidationError(
-        `Coder response failed validation after retry: ${(err as Error).message}`,
-        coderResponse.text
-      );
+      lastFailure = { message: (err as Error).message, raw: coderResponse.text };
     }
+  }
+
+  if (!generated) {
+    throw new AiResponseValidationError(
+      `Coder response failed validation: ${lastFailure!.message}`,
+      lastFailure!.raw
+    );
   }
 
   return {
@@ -216,23 +233,66 @@ export async function modifyExtension(params: {
     .filter(Boolean)
     .join("\n\n");
 
-  const response = await provider.complete({
+  let response = await provider.complete({
     system: MODIFIER_PROMPT,
     messages: [{ role: "user", content: userContent }],
     maxTokens: 8000,
   });
+  let modifyTokens = response.tokensUsed;
 
-  let result;
-  try {
-    result = extensionModificationSchema.parse(extractJson(response.text));
-  } catch (err) {
+  // Same reasoning as the Coder step in generateExtension(): a
+  // schema-valid response can still contain a .js file with a hard
+  // syntax error (e.g. an unquoted hyphenated object key), which would
+  // otherwise reach the user as a chat edit that breaks their extension.
+  let result: ExtensionModificationResult | undefined;
+  let lastFailure: { message: string; raw: string } | undefined;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt === 1) {
+      console.warn("[modify] response invalid, retrying once:", lastFailure!.message);
+      response = await provider.complete({
+        system: MODIFIER_PROMPT,
+        messages: [
+          { role: "user", content: userContent },
+          { role: "assistant", content: response.text },
+          {
+            role: "user",
+            content:
+              `Your previous response could not be used: ${lastFailure!.message}\n\n` +
+              "Respond again with ONLY the complete JSON object, strictly valid JSON. Every changed " +
+              ".js file's \"content\" must also be syntactically valid JavaScript -- in particular, " +
+              "object keys containing a hyphen (e.g. needs-improvement) MUST be quoted as a string key.",
+          },
+        ],
+        maxTokens: 8000,
+      });
+      modifyTokens += response.tokensUsed;
+    }
+
+    try {
+      const candidate = extensionModificationSchema.parse(extractJson(response.text));
+      const jsFiles = candidate.changes
+        .filter((c): c is typeof c & { content: string } => c.action !== "delete" && !!c.content)
+        .map((c) => ({ path: c.path, content: c.content }));
+      const syntaxIssues = validateJsSyntax(jsFiles);
+      if (syntaxIssues.length > 0) {
+        throw new Error(syntaxIssues.map((i) => i.message).join("; "));
+      }
+      result = candidate;
+      break;
+    } catch (err) {
+      lastFailure = { message: (err as Error).message, raw: response.text };
+    }
+  }
+
+  if (!result) {
     throw new AiResponseValidationError(
-      `Modifier response failed validation: ${(err as Error).message}`,
-      response.text
+      `Modifier response failed validation: ${lastFailure!.message}`,
+      lastFailure!.raw
     );
   }
 
-  return { result, tokensUsed: response.tokensUsed, model: response.model };
+  return { result, tokensUsed: modifyTokens, model: response.model };
 }
 
 /** Spec section 33 "Reviewer": audits an existing project's files. */
