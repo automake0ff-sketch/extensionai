@@ -32,6 +32,22 @@ describe("OpenRouterProvider", () => {
     expect(init.headers.Authorization).toBe("Bearer test-key");
   });
 
+  it("always disables reasoning (several free fallback models default it on)", async () => {
+    // Confirmed in production: a reasoning-enabled-by-default free model
+    // spent enough of the token budget on reasoning to truncate its actual
+    // JSON answer twice in a row ("Unexpected end of JSON input").
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "{}" } }] }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await new OpenRouterProvider("test-key").complete({ system: "s", messages: [] });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(body.reasoning).toEqual({ enabled: false });
+  });
+
   it("throws a descriptive error on a non-OK response", async () => {
     vi.stubGlobal(
       "fetch",

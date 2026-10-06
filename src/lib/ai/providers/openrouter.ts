@@ -128,6 +128,16 @@ export class OpenRouterProvider implements AiProvider {
               // Prefer the fastest available provider for this model rather than
               // the cheapest, which is often the most congested.
               provider: { sort: "throughput" },
+              // Several of the free fallback models (the InclusionAI Ling
+              // family, Apodex) have reasoning ON by default. Those reasoning
+              // tokens count against max_tokens same as the real answer, and
+              // were confirmed in production to eat enough of the 8000-token
+              // Coder budget to truncate its JSON before it closed ("Unexpected
+              // end of JSON input") -- two retries in a row, same model. We
+              // want raw JSON, not chain-of-thought, so turn it off everywhere;
+              // OpenRouter honors this uniformly across reasoning-capable
+              // models and ignores it harmlessly on ones without reasoning.
+              reasoning: { enabled: false },
               messages: [
                 { role: "system", content: request.system },
                 ...request.messages.map((m) => ({ role: m.role, content: m.content })),
