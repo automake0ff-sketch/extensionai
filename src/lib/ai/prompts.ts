@@ -54,6 +54,17 @@ Requirements:
 - Never use eval(), new Function(), remote code execution, or inline event handlers in HTML.
 - Do NOT add "icons" or "default_icon" to the manifest. You cannot create image files, and a
   manifest that references a missing icon makes Chrome refuse to load the extension.
+- For a popup button that needs to analyze/scan/read data from the current page on click
+  (an on-page-SEO audit, a word counter, a scraper, etc.): use
+  chrome.scripting.executeScript({ target: { tabId }, func: someFunction }) and read the
+  result directly from the returned array's [0].result. Do NOT dynamically inject a separate
+  content script file and then call chrome.tabs.sendMessage right after — that is a race
+  condition (the injected script's chrome.runtime.onMessage listener may not be registered
+  yet when sendMessage fires) that fails intermittently with "Could not establish connection.
+  Receiving end does not exist." executeScript's own return value needs no message passing
+  and cannot hit that race. Only use a persistent content script declared in the manifest's
+  "content_scripts" (so it's already present and listening before the popup ever opens) if the
+  extension genuinely needs to run continuously on page load, not just on a button click.
 - Include a short README.md explaining what the extension does and how to load it unpacked.
 - Keep the file count reasonable (typically 4-8 files) and every file complete and self-contained.
 - If a popup is needed, include popup.html, and its JS/CSS as separate files referenced from it.`;
