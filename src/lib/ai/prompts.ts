@@ -67,7 +67,16 @@ Requirements:
   extension genuinely needs to run continuously on page load, not just on a button click.
 - Include a short README.md explaining what the extension does and how to load it unpacked.
 - Keep the file count reasonable (typically 4-8 files) and every file complete and self-contained.
-- If a popup is needed, include popup.html, and its JS/CSS as separate files referenced from it.`;
+- If a popup is needed, include popup.html, and its JS/CSS as separate files referenced from it.
+- The popup must never render blank on open. On initial load (before any analysis has run),
+  show a clear heading, one sentence of what the extension does, and a visible action button
+  (e.g. "Analyze this page") if the analysis isn't automatic. Do NOT make the popup's visible
+  content depend on an async response that might not arrive (e.g. waiting on a tab/content-script
+  message before showing anything) -- that's an empty popup if the response is ever slow, missing,
+  or (in a preview sandbox) never comes. Build the UI in this order: static, populated HTML first
+  (works standalone, with placeholder/empty-state text), THEN wire up the button to replace that
+  placeholder content with real results. Never start from an empty <body> or an empty container
+  that JS is solely responsible for filling, since that fails closed (blank) instead of open.`;
 
 export const REVIEWER_PROMPT = `You are the Reviewer for ExtenAI. You audit a generated Chrome extension
 project for correctness, security and permission hygiene.
