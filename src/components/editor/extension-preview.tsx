@@ -26,8 +26,18 @@ const CHROME_API_SHIM = `
   var asCallback = function (value) {
     return function (cb) { if (typeof cb === "function") cb(value); return Promise.resolve(value); };
   };
+  // A real active tab always exists when a popup is open, and popup code
+  // overwhelmingly assumes that (const [tab] = await chrome.tabs.query(...);
+  // ...tab.id). Returning [] for query() (as this used to) meant tab was
+  // undefined and tab.id crashed with "Cannot read properties of undefined
+  // (reading 'id')" -- confirmed in production, on a different error than
+  // the one this whole shim was originally built to prevent. A single fake
+  // tab object is a far more representative stand-in for "the preview can't
+  // know the real page" than an empty list.
+  var FAKE_TAB = { id: 1, url: "https://example.com/", title: "Preview Page", active: true, windowId: 1 };
   chrome.tabs = chrome.tabs || {
-    query: function (opts, cb) { return asCallback([])(cb); },
+    query: function (opts, cb) { return asCallback([FAKE_TAB])(cb); },
+    get: function (tabId, cb) { return asCallback(FAKE_TAB)(cb); },
     sendMessage: function (tabId, msg, opts, cb) { return asCallback(undefined)(typeof opts === "function" ? opts : cb); },
     create: noop,
     update: noop,

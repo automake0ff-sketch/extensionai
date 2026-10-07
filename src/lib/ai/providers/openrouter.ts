@@ -40,15 +40,20 @@ const REQUEST_TIMEOUT_MS = 140_000;
 //
 // Re-check what's actually free (this list goes stale too) via:
 //   curl https://openrouter.ai/api/v1/models | jq '.data[] | select(.pricing.prompt=="0") | .id'
-const DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free";
-// Deliberately spread across different providers/families (Qwen, InclusionAI,
-// Apodex), not just Qwen variants -- confirmed in production that when one
-// model gets congested upstream, it's plausible for the whole family/provider
-// to be congested together, and a different provider is more likely to be
-// unaffected. All confirmed free (pricing.prompt == "0") via a live query to
-// https://openrouter.ai/api/v1/models at the time this list was last updated.
+// qwen/qwen3.8-27b:free was the default until it was fully retired (confirmed
+// 404 "unavailable for free" on every call in production, and absent entirely
+// from a live query to https://openrouter.ai/api/v1/models) -- promoted
+// inclusionai/ling-3.0-flash-sante:free since it's the one actually
+// responding reliably (1-7s) in production logs.
+const DEFAULT_OPENROUTER_MODEL = "inclusionai/ling-3.0-flash-sante:free";
+// Deliberately spread across different providers/families (InclusionAI,
+// Apodex), not just one vendor's variants -- confirmed in production that
+// when one model gets congested upstream, it's plausible for the whole
+// family/provider to be congested together, and a different provider is more
+// likely to be unaffected. All confirmed free (pricing.prompt == "0") via a
+// live query to https://openrouter.ai/api/v1/models at the time this list
+// was last updated.
 const FALLBACK_FREE_MODELS = [
-  "qwen/qwen3.8-27b:free",
   "inclusionai/ling-3.0-flash-sante:free",
   "apodex/apodex-1.1-mini:free",
   "inclusionai/ling-3.1-flash",

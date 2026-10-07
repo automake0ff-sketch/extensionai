@@ -132,21 +132,26 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
   });
   let coderTokens = coderResponse.tokensUsed;
 
-  // At most one retry, checking both that the response is valid JSON AND
-  // that every .js file it contains actually parses as JavaScript. The
-  // latter was a real gap: a schema-valid response can still contain
-  // JS with a hard syntax error (confirmed in production: an unquoted
-  // hyphenated object key, `needs-improvement: {...}`, parsed as
+  // Up to 2 retries (3 attempts total), checking both that the response is
+  // valid JSON AND that every .js file it contains actually parses as
+  // JavaScript. The latter was a real gap: a schema-valid response can
+  // still contain JS with a hard syntax error (confirmed in production: an
+  // unquoted hyphenated object key, `needs-improvement: {...}`, parsed as
   // `needs - improvement` -- a SyntaxError that breaks the whole script),
   // and nothing used to catch that before it reached the user as a
-  // generated extension that fails to even load in Chrome.
+  // generated extension that fails to even load in Chrome. Bumped from 1
+  // retry to 2 now that reasoning is disabled: each attempt against the
+  // small free fallback models typically takes 1-7s (confirmed in
+  // production logs), so budget was never the constraint -- model
+  // reliability was, and a cheap extra attempt measurably reduces the
+  // "invalid extension structure" failure rate for a model this small.
   let generated: ExtensionGenerationResult | undefined;
   let lastFailure: { message: string; raw: string } | undefined;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt === 1) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
       if (remainingBudgetMs(startedAt) < MIN_RETRY_TIME_MS) break;
-      console.warn("[generate] coder output invalid, retrying once:", lastFailure!.message);
+      console.warn(`[generate] coder output invalid, retrying (attempt ${attempt + 1}/3):`, lastFailure!.message);
       coderResponse = await provider.complete({
         system: CODER_PROMPT,
         messages: [
@@ -247,9 +252,9 @@ export async function modifyExtension(params: {
   let result: ExtensionModificationResult | undefined;
   let lastFailure: { message: string; raw: string } | undefined;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt === 1) {
-      console.warn("[modify] response invalid, retrying once:", lastFailure!.message);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      console.warn(`[modify] response invalid, retrying (attempt ${attempt + 1}/3):`, lastFailure!.message);
       response = await provider.complete({
         system: MODIFIER_PROMPT,
         messages: [
