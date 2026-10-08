@@ -1,5 +1,6 @@
 import { getAiProvider } from "./index";
 import { validateJsSyntax } from "@/lib/validator/js-syntax";
+import { validateManifest } from "@/lib/validator/manifest";
 import {
   ARCHITECT_PROMPT,
   CODER_PROMPT,
@@ -165,7 +166,8 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
               "as backslash-n, double quotes as backslash-quote, and every literal backslash as two " +
               "backslashes. Every .js file's \"content\" must also be syntactically valid JavaScript -- " +
               "in particular, object keys containing a hyphen (e.g. needs-improvement) MUST be quoted " +
-              "as a string key, not written bare.",
+              "as a string key, not written bare. The manifest.json file's \"content\" must itself " +
+              "be valid JSON (no trailing commas, no comments, all strings double-quoted).",
           },
         ],
         maxTokens: 8000,
@@ -177,8 +179,21 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
     try {
       const candidate = extensionGenerationSchema.parse(extractJson(coderResponse.text));
       const syntaxIssues = validateJsSyntax(candidate.files);
-      if (syntaxIssues.length > 0) {
-        throw new Error(syntaxIssues.map((i) => i.message).join("; "));
+      const manifestFile = candidate.files.find((f) => f.path === "manifest.json");
+      // validateManifest's first (and only, when the JSON itself is broken)
+      // issue is exactly "manifest.json is not valid JSON" -- confirmed as a
+      // real production failure (Validate flagged it after a generation
+      // that otherwise reported success). The schema above only checks that
+      // manifest.json exists as a file with string content, never that the
+      // content itself parses as JSON.
+      // Errors only: validateManifest also emits "warning"-level notes
+      // (e.g. broad permissions) that are advice for the user, not a reason
+      // to throw the whole generation away and retry.
+      const manifestIssues = manifestFile
+        ? validateManifest(manifestFile.content).filter((i) => i.level === "error")
+        : [];
+      if (syntaxIssues.length > 0 || manifestIssues.length > 0) {
+        throw new Error([...syntaxIssues, ...manifestIssues].map((i) => i.message).join("; "));
       }
       generated = candidate;
       break;
@@ -266,7 +281,9 @@ export async function modifyExtension(params: {
               `Your previous response could not be used: ${lastFailure!.message}\n\n` +
               "Respond again with ONLY the complete JSON object, strictly valid JSON. Every changed " +
               ".js file's \"content\" must also be syntactically valid JavaScript -- in particular, " +
-              "object keys containing a hyphen (e.g. needs-improvement) MUST be quoted as a string key.",
+              "object keys containing a hyphen (e.g. needs-improvement) MUST be quoted as a string key. " +
+              "If you changed manifest.json, its \"content\" must itself be valid JSON (no trailing " +
+              "commas, no comments, all strings double-quoted).",
           },
         ],
         maxTokens: 8000,
@@ -276,12 +293,22 @@ export async function modifyExtension(params: {
 
     try {
       const candidate = extensionModificationSchema.parse(extractJson(response.text));
-      const jsFiles = candidate.changes
+      const changedFiles = candidate.changes
         .filter((c): c is typeof c & { content: string } => c.action !== "delete" && !!c.content)
         .map((c) => ({ path: c.path, content: c.content }));
-      const syntaxIssues = validateJsSyntax(jsFiles);
-      if (syntaxIssues.length > 0) {
-        throw new Error(syntaxIssues.map((i) => i.message).join("; "));
+      const syntaxIssues = validateJsSyntax(changedFiles);
+      // A chat edit that touches manifest.json can leave it as invalid JSON
+      // (trailing comma, unescaped quote, etc.) -- this is the path that
+      // most likely produced the "manifest.json is not valid JSON" error
+      // the Validate button flagged in production. Only checked when the
+      // edit actually changes manifest.json; edits that leave it alone
+      // don't need it re-validated here.
+      const manifestChange = changedFiles.find((f) => f.path === "manifest.json");
+      const manifestIssues = manifestChange
+        ? validateManifest(manifestChange.content).filter((i) => i.level === "error")
+        : [];
+      if (syntaxIssues.length > 0 || manifestIssues.length > 0) {
+        throw new Error([...syntaxIssues, ...manifestIssues].map((i) => i.message).join("; "));
       }
       result = candidate;
       break;
