@@ -19,13 +19,30 @@ Respond with ONLY a JSON object (no prose, no markdown fences) matching:
   "host_permissions": string[],
   "components": { "background": boolean, "content_script": boolean, "popup": boolean, "options_page": boolean },
   "files_plan": string[],
-  "notes": string
+  "notes": string,
+  "message_passing": string
 }
 
 Rules:
 - Always target "manifest_version": 3.
 - Never request a permission the plan does not clearly need.
-- Prefer "activeTab" over broad host permissions when possible.
+- Minimum permissions. If the extension only acts on the tab the user is looking at when they
+  click (audit, count, extract, summarize), use "activeTab" plus "scripting" and NO
+  host_permissions. Ask for host_permissions only for specific sites the extension must act on
+  without a click, and never "<all_urls>" unless there is no alternative; if you must, say why
+  in "notes".
+- If the extension must remember settings or data, include "storage" and say in "notes" what is
+  kept in chrome.storage.local (chrome.storage.sync for small preferences).
+- The background service worker is suspended all the time: plan it as event listeners only, with
+  no state in global variables (use chrome.storage, and chrome.alarms instead of
+  setTimeout/setInterval for anything that must fire later).
+- To block or redirect sites (a distraction blocker, a filter), plan on
+  chrome.declarativeNetRequest dynamic rules instead of a content script: they act before the
+  page loads and work with a list the user edits.
+- "message_passing" is one short line per message, "sender -> receiver: action". Use "" if the
+  components do not exchange messages, and prefer no messaging at all when
+  chrome.scripting.executeScript can return the result directly.
+- Never plan eval(), string timers, or building HTML from page or user data with innerHTML.
 - Keep "notes" to at most 2 short sentences. This response has a limited token
   budget; a long "notes" field risks truncating the JSON before it closes, which
   makes the whole response unusable. Every other field should also stay concise —
@@ -65,6 +82,31 @@ Requirements:
   and cannot hit that race. Only use a persistent content script declared in the manifest's
   "content_scripts" (so it's already present and listening before the popup ever opens) if the
   extension genuinely needs to run continuously on page load, not just on a button click.
+- Service worker (background.js): register every listener synchronously at the top level of the
+  file, never inside an async callback or after an await. The worker is suspended often, so keep
+  no state in global variables; read and write it with chrome.storage. Use chrome.alarms (not
+  setTimeout/setInterval) for anything that must happen later. localStorage does not exist in a
+  service worker.
+- Anything the user configures or the extension must remember (settings, lists, counters) goes in
+  chrome.storage.local (chrome.storage.sync for small preferences), with the "storage" permission.
+  A popup or worker loses all in-memory state when it closes.
+- Messaging, only when really needed: an onMessage listener that answers asynchronously must
+  return true so the channel stays open. Wrap chrome.tabs.sendMessage and
+  chrome.runtime.sendMessage in try/catch (or read chrome.runtime.lastError in the callback form):
+  they reject when nothing is listening, and that must not become an unhandled error.
+- To block or redirect sites, use chrome.declarativeNetRequest.updateDynamicRules (permission
+  "declarativeNetRequest"; "block" rules need no host_permissions) instead of a content script.
+  Replace the whole rule set in one call (removeRuleIds plus addRules) every time the user's list
+  changes.
+- Use textContent, not innerHTML, for any text that comes from the page, the user or storage;
+  innerHTML only for static markup. Never pass a string to setTimeout or setInterval.
+- If a content script loads a file from the extension into the page with chrome.runtime.getURL,
+  list that file under "web_accessible_resources" in the manifest.
+- Side panel (a panel that stays open next to the page), only if the user asks for one: manifest
+  "side_panel": {"default_path": "sidepanel.html"} and permission "sidePanel", no "default_popup",
+  and call chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }) in background.js so
+  clicking the toolbar icon opens it. Treat sidepanel.html like a popup: it must show content
+  immediately.
 - Include a short README.md explaining what the extension does and how to load it unpacked.
 - Keep the file count reasonable (typically 4-8 files) and every file complete and self-contained.
 - If a popup is needed, include popup.html, and its JS/CSS as separate files referenced from it.

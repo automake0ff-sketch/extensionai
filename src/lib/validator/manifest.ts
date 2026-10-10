@@ -40,6 +40,25 @@ const KNOWN_CHROME_PERMISSIONS = new Set([
   "webNavigation",
   "webRequest",
   "webRequestBlocking",
+  // Valid MV3 permissions that were missing from this list, so the validator
+  // warned "not a recognized permission" on exactly the APIs it should be
+  // steering people toward: declarativeNetRequest is the MV3 way to block
+  // sites (blocks before the page loads, no host_permissions needed for
+  // "block" rules), and sidePanel is the side panel API.
+  "sidePanel",
+  "declarativeNetRequest",
+  "declarativeNetRequestWithHostAccess",
+  "declarativeNetRequestFeedback",
+  "offscreen",
+  "nativeMessaging",
+  "readingList",
+  "contentSettings",
+  "fontSettings",
+  "geolocation",
+  "identity.email",
+  "debugger",
+  "desktopCapture",
+  "gcm",
 ]);
 
 // Permissions that are broad/sensitive enough to always flag as "consider
@@ -146,6 +165,12 @@ const DANGEROUS_PATTERNS: { pattern: RegExp; code: string; message: string }[] =
     message: "Use of new Function() is not allowed (equivalent to eval()).",
   },
   {
+    pattern: /\bset(?:Timeout|Interval)\s*\(\s*["'`]/,
+    code: "string_timer_usage",
+    message:
+      "setTimeout/setInterval with a string argument evaluates code like eval() and is blocked by Manifest V3's CSP. Pass a function instead.",
+  },
+  {
     pattern: /document\.write\s*\(/,
     code: "document_write_usage",
     message: "document.write() is discouraged and blocked by Manifest V3's default CSP in many contexts.",
@@ -229,6 +254,12 @@ export function validateReferencedFiles(files: ProjectFile[]): ValidationIssue[]
 
   const optionsPage = manifest.options_page as string | undefined;
   if (optionsPage) referenced.add(optionsPage);
+
+  const optionsUi = manifest.options_ui as { page?: string } | undefined;
+  if (optionsUi?.page) referenced.add(optionsUi.page);
+
+  const sidePanel = manifest.side_panel as { default_path?: string } | undefined;
+  if (sidePanel?.default_path) referenced.add(sidePanel.default_path);
 
   for (const ref of referenced) {
     if (!byPath.has(ref)) {

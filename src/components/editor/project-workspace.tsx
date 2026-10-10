@@ -260,7 +260,11 @@ export function ProjectWorkspace({
     }
   }
 
-  const popupFile = files.find((f) => f.path.match(/popup\.html$/));
+  // Side panel extensions have no popup.html; preview their panel page instead of
+  // showing "No popup.html in this project yet."
+  const popupFile =
+    files.find((f) => f.path.match(/popup\.html$/)) ??
+    files.find((f) => f.path.match(/side[-_]?panel\.html$/i));
   const manifestFile = files.find((f) => f.path === "manifest.json");
 
   return (

@@ -23,6 +23,10 @@ export const architectPlanSchema = z.object({
   }),
   files_plan: z.array(z.string()),
   notes: z.string(),
+  // Optional on purpose: a smaller model that omits it must not fail the
+  // whole plan. Declared here (not just in the prompt) because zod strips
+  // unknown keys, so without it this would never reach the Coder.
+  message_passing: z.string().optional(),
 });
 
 export const extensionGenerationSchema = z.object({
