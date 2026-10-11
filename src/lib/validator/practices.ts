@@ -1,4 +1,5 @@
 import type { ValidationIssue } from "@/lib/types";
+import { uncoveredLlmHosts } from "@/lib/llm-hosts";
 
 type FileLike = { path: string; content: string };
 
@@ -111,4 +112,20 @@ export function validateWebAccessibleResources(files: FileLike[]): ValidationIss
   }
 
   return issues;
+}
+
+/**
+ * Code that calls a language-model API but whose manifest never declares
+ * that host. Extension pages and the service worker only bypass CORS for
+ * origins listed in host_permissions (or granted at runtime through
+ * optional_host_permissions), so the request can fail in Chrome even though
+ * the code looks right. Warning only: some APIs allow browser origins.
+ */
+export function validateLlmHostPermissions(files: FileLike[]): ValidationIssue[] {
+  return uncoveredLlmHosts(files).map((host) => ({
+    level: "warning" as const,
+    code: "llm_host_permission_missing",
+    message: `The code calls ${host} but manifest.json has no host_permissions entry for it (for example "https://${host}/*"), so Chrome may block the request.`,
+    path: "manifest.json",
+  }));
 }

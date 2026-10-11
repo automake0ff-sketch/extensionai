@@ -1,7 +1,7 @@
 import type { ProjectFile, ValidationResult } from "@/lib/types";
 import { scanFileForSecurityIssues, validateManifest, validateReferencedFiles } from "./manifest";
 import { validateJsSyntax } from "./js-syntax";
-import { validateInnerHtmlUsage, validateWebAccessibleResources } from "./practices";
+import { validateInnerHtmlUsage, validateLlmHostPermissions, validateWebAccessibleResources } from "./practices";
 
 /**
  * Full "Extension health" check (spec section 15). Runs before ZIP export
@@ -19,6 +19,7 @@ export function validateProject(files: ProjectFile[]): ValidationResult {
     ...validateJsSyntax(files),
     ...validateInnerHtmlUsage(files),
     ...validateWebAccessibleResources(files),
+    ...validateLlmHostPermissions(files),
   ];
 
   const valid = !issues.some((issue) => issue.level === "error");

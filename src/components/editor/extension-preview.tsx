@@ -49,6 +49,12 @@ const CHROME_API_SHIM = `
     id: "preview",
     lastError: undefined,
   };
+  // Fill in individual members too, in case the page already has a partial
+  // chrome.runtime (the object above is only used when it has none). The AI
+  // extension recipe shows an "open settings" button that calls
+  // chrome.runtime.openOptionsPage(), which must not crash the preview.
+  chrome.runtime.openOptionsPage = chrome.runtime.openOptionsPage || noop;
+  chrome.runtime.getManifest = chrome.runtime.getManifest || function () { return { name: "Preview", version: "0.0.0" }; };
   chrome.scripting = chrome.scripting || {
     executeScript: function () { return Promise.resolve([{ result: undefined }]); },
     insertCSS: function () { return Promise.resolve(); },

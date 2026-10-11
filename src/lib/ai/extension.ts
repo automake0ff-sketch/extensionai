@@ -1,7 +1,9 @@
 import { getAiProvider } from "./index";
 import { validateJsSyntax } from "@/lib/validator/js-syntax";
 import { validateManifest } from "@/lib/validator/manifest";
+import { requestNeedsLlm } from "./llm-usage";
 import {
+  AI_FEATURES_RECIPE,
   ARCHITECT_PROMPT,
   CODER_PROMPT,
   MODIFIER_PROMPT,
@@ -123,10 +125,18 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
     }
   }
 
+  // Extensions that need a language model inside them (summarize, quiz,
+  // translate...) get the "bring your own key" recipe; the rest keep the
+  // shorter prompt, since every extra rule is more output for a small
+  // model to get wrong.
+  const needsLlm = requestNeedsLlm(prompt, plan);
+  const coderSystem = needsLlm ? `${CODER_PROMPT}\n\n${AI_FEATURES_RECIPE}` : CODER_PROMPT;
+  if (needsLlm) console.log("[generate] AI-features recipe added to the Coder prompt");
+
   const coderUserContent = `User request: ${prompt}\n\nArchitect plan:\n${JSON.stringify(plan, null, 2)}`;
 
   let coderResponse = await provider.complete({
-    system: CODER_PROMPT,
+    system: coderSystem,
     messages: [{ role: "user", content: coderUserContent }],
     maxTokens: 8000,
     timeoutMs: remainingBudgetMs(startedAt),
@@ -154,7 +164,7 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
       if (remainingBudgetMs(startedAt) < MIN_RETRY_TIME_MS) break;
       console.warn(`[generate] coder output invalid, retrying (attempt ${attempt + 1}/3):`, lastFailure!.message);
       coderResponse = await provider.complete({
-        system: CODER_PROMPT,
+        system: coderSystem,
         messages: [
           { role: "user", content: coderUserContent },
           { role: "assistant", content: coderResponse.text },

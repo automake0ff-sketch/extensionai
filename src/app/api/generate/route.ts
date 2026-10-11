@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/firebase/session";
 import { AiResponseValidationError, generateExtension } from "@/lib/ai/extension";
+import { describeLlmNotice, findLlmHostsInCode } from "@/lib/llm-hosts";
 import { stripMissingManifestIcons } from "@/lib/ai/manifest-fixups";
 import { getDefaultModelForRecording } from "@/lib/ai";
 import { getUsage, recordUsage } from "@/lib/usage";
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
       "assistant",
       `Your extension "${result.name}" is ready. I created ${result.files.length} file(s): ${result.files
         .map((f) => f.path)
-        .join(", ")}.`
+        .join(", ")}.${describeLlmNotice(findLlmHostsInCode(result.files))}`
     );
 
     return NextResponse.json({ project: { ...project, status: "ready" }, result });
