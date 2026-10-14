@@ -63,5 +63,8 @@ export function uncoveredLlmHosts(files: FileLike[]): string[] {
 /** One-line note appended to the chat message when a generated extension needs the user's own API key. */
 export function describeLlmNotice(hosts: string[]): string {
   if (hosts.length === 0) return "";
+  if (hosts.length >= 3) {
+    return ` Heads up: this extension can use several AI providers (${hosts.join(", ")}). Whoever uses it picks one in its Options page and needs that provider's API key; Groq and Google Gemini offer free keys, and Ollama runs locally and needs none. This preview can't run that part.`;
+  }
   return ` Heads up: this extension calls an AI service (${hosts.join(", ")}), so whoever uses it needs their own API key. After loading it in Chrome, open its Options page and paste one. This preview can't run that part.`;
 }

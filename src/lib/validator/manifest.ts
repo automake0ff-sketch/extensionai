@@ -261,6 +261,22 @@ export function validateReferencedFiles(files: ProjectFile[]): ValidationIssue[]
   const sidePanel = manifest.side_panel as { default_path?: string } | undefined;
   if (sidePanel?.default_path) referenced.add(sidePanel.default_path);
 
+  // importScripts("x.js") in a service worker (or any worker script): if x.js
+  // is missing the whole worker fails to register, so treat it like any other
+  // required file. Paths resolve relative to the importing file; remote URLs
+  // are skipped (MV3 forbids remote code and the other checks cover that).
+  for (const file of files) {
+    if (!file.path.endsWith(".js")) continue;
+    const dir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/") + 1) : "";
+    for (const call of file.content.matchAll(/\bimportScripts\s*\(([^)]*)\)/g)) {
+      for (const literal of call[1].matchAll(/["'`]([^"'`]+)["'`]/g)) {
+        const target = literal[1];
+        if (/^[a-z]+:/i.test(target)) continue;
+        referenced.add(target.startsWith("/") ? target.slice(1) : dir + target.replace(/^\.\//, ""));
+      }
+    }
+  }
+
   for (const ref of referenced) {
     if (!byPath.has(ref)) {
       issues.push({

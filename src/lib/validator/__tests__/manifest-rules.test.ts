@@ -73,3 +73,43 @@ describe("pages referenced from the manifest must exist", () => {
     expect(result.issues.filter((i) => i.code === "missing_referenced_file")).toEqual([]);
   });
 });
+
+describe("importScripts targets must exist", () => {
+  const sw = (code: string) => [
+    f("manifest.json", manifest({ background: { service_worker: "background.js" } })),
+    f("background.js", code),
+  ];
+
+  it("flags a missing imported script as an error (the worker would fail to register)", () => {
+    const result = validateProject(sw('importScripts("providers.js"); chrome.runtime.onInstalled.addListener(() => {});'));
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === "missing_referenced_file" && i.path === "providers.js")).toBe(true);
+  });
+
+  it("accepts it when the file exists, with or without ./", () => {
+    for (const call of ['importScripts("providers.js");', "importScripts('./providers.js');"]) {
+      const result = validateProject([...sw(call), f("providers.js", "const PROVIDERS = {};")]);
+      expect(result.issues.filter((i) => i.code === "missing_referenced_file")).toEqual([]);
+    }
+  });
+
+  it("checks every argument of a multi-file call", () => {
+    const result = validateProject([...sw('importScripts("a.js", "b.js");'), f("a.js", "var a = 1;")]);
+    const missing = result.issues.filter((i) => i.code === "missing_referenced_file").map((i) => i.path);
+    expect(missing).toEqual(["b.js"]);
+  });
+
+  it("resolves paths relative to the importing file", () => {
+    const result = validateProject([
+      f("manifest.json", manifest({ background: { service_worker: "worker/background.js" } })),
+      f("worker/background.js", 'importScripts("helpers.js");'),
+      f("worker/helpers.js", "var h = 1;"),
+    ]);
+    expect(result.issues.filter((i) => i.code === "missing_referenced_file")).toEqual([]);
+  });
+
+  it("ignores remote URLs (MV3 forbids them; other checks cover that)", () => {
+    const result = validateProject(sw('importScripts("https://cdn.example.com/lib.js");'));
+    expect(result.issues.some((i) => i.code === "missing_referenced_file")).toBe(false);
+  });
+});

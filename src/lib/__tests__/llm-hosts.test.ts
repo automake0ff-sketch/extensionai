@@ -71,3 +71,13 @@ describe("describeLlmNotice", () => {
     expect(note).toMatch(/API key/);
   });
 });
+
+describe("describeLlmNotice with several providers", () => {
+  it("tells the user to pick one in Options and mentions the free choices", () => {
+    const note = describeLlmNotice(["api.groq.com", "api.openai.com", "localhost"]);
+    expect(note).toMatch(/several AI providers/);
+    expect(note).toMatch(/Options page/);
+    expect(note).toMatch(/Groq and Google Gemini offer free keys/);
+    expect(note).toMatch(/Ollama/);
+  });
+});

@@ -128,38 +128,56 @@ Requirements:
 // on an options page, one-click actions instead of a blank chat box, and a
 // visible statement that the page text goes to the provider.
 export const AI_FEATURES_RECIPE = `This extension needs a language model. There is no server to call, so the person using it
-brings their own API key. Follow this pattern exactly:
-- Settings page: options.html + options.js, declared in the manifest as "options_ui":
-  {"page": "options.html"}. It has a password-type field for the API key, a text field for the
-  model (prefilled with a cheap, current model of the provider), and a Save button that writes to
+brings their own API key, and can pick a free provider. Build it exactly like this:
+- providers.js (a classic script, no import/export) defines one table shared by the options page
+  and the worker:
+  const PROVIDERS = {
+    groq: { label: "Groq (free)", url: "https://api.groq.com/openai/v1/chat/completions", origin: "https://api.groq.com/*", model: "openai/gpt-oss-120b", keyUrl: "https://console.groq.com/keys" },
+    gemini: { label: "Google Gemini (free)", url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", origin: "https://generativelanguage.googleapis.com/*", model: "gemini-2.5-flash-lite", keyUrl: "https://aistudio.google.com/apikey" },
+    openrouter: { label: "OpenRouter (free models)", url: "https://openrouter.ai/api/v1/chat/completions", origin: "https://openrouter.ai/*", model: "openrouter/free", keyUrl: "https://openrouter.ai/keys" },
+    openai: { label: "OpenAI (paid)", url: "https://api.openai.com/v1/chat/completions", origin: "https://api.openai.com/*", model: "gpt-4o-mini", keyUrl: "https://platform.openai.com/api-keys" },
+    ollama: { label: "Ollama (local, no key)", url: "http://localhost:11434/v1/chat/completions", origin: "http://localhost/*", model: "llama3.2", keyUrl: "", noKey: true }
+  };
+- All five speak the same OpenAI-style chat completions format: POST to the provider's url with
+  header Content-Type: application/json, plus Authorization: Bearer KEY (omit it for Ollama), and
+  body {"model", "messages": [{"role":"system","content":...},{"role":"user","content":...}]}.
+  The answer is in data.choices[0].message.content.
+- Manifest: permission "storage" (plus "activeTab" and "scripting" if it reads the page); list every
+  PROVIDERS origin under "optional_host_permissions", never under "host_permissions" and never
+  "<all_urls>"; "background": {"service_worker": "background.js"} with no "type": "module";
+  "options_ui": {"page": "options.html"}.
+- Settings page (options.html loads providers.js, then options.js): a provider select (default
+  groq), a password-type API key field (hidden for Ollama), a model field prefilled from PROVIDERS
+  and editable, a link to the provider's keyUrl, and a Save button. On the Save click, first call
+  chrome.permissions.request({ origins: [PROVIDERS[provider].origin] }) (it must run inside the
+  click handler) and only if it is granted write { provider, apiKey, model } to
   chrome.storage.local. Under the key field add: "Stored on this device, not encrypted. Use a key
-  with a spending limit." Never hardcode a key anywhere in the code.
-- Provider: use OpenAI-compatible chat completions unless the request names another provider.
-  OpenAI: POST https://api.openai.com/v1/chat/completions, header Authorization: Bearer KEY,
-  body {"model", "messages": [{"role":"system","content":...},{"role":"user","content":...}]},
-  answer in data.choices[0].message.content. Anthropic: POST https://api.anthropic.com/v1/messages,
-  headers x-api-key, anthropic-version: 2023-06-01, anthropic-dangerous-direct-browser-access: true,
-  body {"model","max_tokens","system","messages"}, answer in data.content[0].text.
-- Put ONLY that provider's origin in "host_permissions" (for example "https://api.openai.com/*"),
-  never "<all_urls>", and include "storage" in permissions.
-- Make every API call from background.js, not from the popup or a content script. The popup sends
-  chrome.runtime.sendMessage({ action: "ask", task, text }); the worker reads the key from
-  chrome.storage.local, calls fetch, and replies; the onMessage listener must return true.
-  Check response.ok and turn failures into a short readable message.
-- Page text: in the popup click handler use chrome.scripting.executeScript with a func that returns
-  the selected text if there is any, otherwise the innerText of article, main or body, trimmed
-  and cut to about 12000 characters. If it has fewer than about 200 characters, say there is no
-  readable text on this page and do not call the API.
-- Interface: one button per task (for example Summarize, Outline, Quiz) so nobody has to write a
-  prompt. Disable the buttons and show "Working..." while waiting. If the key is missing, show a
-  button that calls chrome.runtime.openOptionsPage(). Map HTTP 401 to "Invalid API key" and 429 to
-  "Rate limit reached, try again in a minute". Show the result with textContent (white-space:
-  pre-wrap) and add a Copy button.
-- Tell the model to answer in the language of the page text unless asked otherwise. When you need
-  structured output (a quiz, a list), ask for JSON, parse it inside try/catch, and fall back to
-  showing the raw text.
-- Show this line in the popup near the buttons: "The page text is sent to PROVIDER with your API
-  key." and repeat it in the README with where to get a key.`;
+  with a spending limit." For Ollama add: "If you get a 403, start Ollama with
+  OLLAMA_ORIGINS=chrome-extension://*". Never hardcode a key anywhere.
+- Make every API call from background.js, which starts with importScripts("providers.js"), never
+  from the popup or a content script. The popup sends chrome.runtime.sendMessage({ action: "ask",
+  task, text }); the worker reads the settings from chrome.storage.local, calls fetch and replies;
+  the onMessage listener must return true. Check response.ok.
+- Page text, only if the extension works on the current page: in the popup click handler use
+  chrome.scripting.executeScript with a func that returns the selected text if there is any,
+  otherwise the innerText of article, main or body, trimmed and cut to about 12000 characters. If
+  it has fewer than about 200 characters, say there is no readable text and do not call the API.
+- Interface: one button per task (for example Summarize, Quiz) so nobody writes a prompt. Disable
+  the buttons and show "Working..." while waiting. Errors must be readable and say what to do:
+  missing key (not for Ollama) or missing permission, show a button that calls
+  chrome.runtime.openOptionsPage(); 401 "Invalid API key"; 429 "Rate limit reached, try again in a
+  minute"; 400 or 404 "Check the model name in Settings"; a failed fetch "Could not reach
+  PROVIDER (is Ollama running?). Save the settings again to grant access." Show the result with
+  textContent (white-space: pre-wrap) and add a Copy button.
+- Tell the model to answer in the language of the text unless asked otherwise. For structured
+  output (a quiz, a list) ask for JSON, parse it inside try/catch, and fall back to showing the raw
+  text.
+- Show this line in the popup near the buttons, using the saved provider's label: "The text is sent
+  to PROVIDER with your API key." Repeat it in the README with the keyUrl of each provider.
+- If the request names Anthropic, add it to the table with its own request shape instead of the
+  common one: POST https://api.anthropic.com/v1/messages with headers x-api-key, anthropic-version:
+  2023-06-01 and anthropic-dangerous-direct-browser-access: true, body {"model","max_tokens",
+  "system","messages"}, answer in data.content[0].text.`;
 
 
 export const REVIEWER_PROMPT = `You are the Reviewer for ExtenAI. You audit a generated Chrome extension
