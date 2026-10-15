@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<Project["status"], { label: string; className: string
 export default async function DashboardPage() {
   const session = await getSession();
   const profile = await getProfile(session!.uid);
-  const usage = await getUsage(session!.uid, profile?.plan ?? "free");
+  const usage = await getUsage(session!.uid, profile?.plan ?? "free", session!.email);
   const projects = await listProjects(session!.uid);
 
   return (
@@ -42,7 +42,8 @@ export default async function DashboardPage() {
             <Zap className="h-4 w-4" /> <span className="text-xs">AI credits used this period</span>
           </div>
           <p className="mt-2 text-2xl font-semibold">
-            {usage.used} <span className="text-base font-normal text-ink-dim">/ {usage.limit}</span>
+            {usage.used}{" "}
+            <span className="text-base font-normal text-ink-dim">/ {usage.unlimited ? "unlimited" : usage.limit}</span>
           </p>
         </div>
         <div className="rounded-2xl border border-ink-line bg-ink-raised p-5">

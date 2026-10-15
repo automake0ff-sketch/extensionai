@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   }
 
   const profile = await getProfile(session.uid);
-  const usage = await getUsage(session.uid, profile?.plan ?? "free");
+  const usage = await getUsage(session.uid, profile?.plan ?? "free", session.email);
   if (usage.used >= usage.limit) {
     return NextResponse.json(
       { error: `You've used all ${usage.limit} AI credits for this period. Upgrade your plan to continue.` },

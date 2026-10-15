@@ -14,7 +14,7 @@ export default async function SettingsPage({
   const params = await searchParams;
   const session = await getSession();
   const profile = await getProfile(session!.uid);
-  const usage = await getUsage(session!.uid, profile?.plan ?? "free");
+  const usage = await getUsage(session!.uid, profile?.plan ?? "free", session!.email);
   const githubConnection = await getGithubConnection(session!.uid);
   const showAdmin = isAdminEmail(session!.email);
   const waitlistStats = showAdmin ? await getWaitlistStats() : null;
@@ -48,7 +48,9 @@ export default async function SettingsPage({
         <h2 className="text-sm font-medium">Plan &amp; usage</h2>
         <p className="mt-2 text-sm capitalize">{(profile?.plan ?? "free").replace("_", "+")} plan</p>
         <p className="mt-1 text-sm text-ink-dim">
-          {usage.used} / {usage.limit} AI credits used this period
+          {usage.unlimited
+            ? `${usage.used} AI credits used this period (unlimited)`
+            : `${usage.used} / ${usage.limit} AI credits used this period`}
         </p>
         <BillingSection currentPlan={profile?.plan ?? "free"} />
       </section>

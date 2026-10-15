@@ -1,4 +1,5 @@
 import { getUsageDoc, incrementUsage } from "@/lib/firebase/firestore";
+import { isAdminEmail } from "@/lib/admin";
 
 export const PLAN_CREDITS: Record<string, number> = {
   free: 20,
@@ -16,18 +17,26 @@ export function currentPeriod(): string {
  * limit. Does not itself block the request — callers decide what to do
  * when the limit is reached (spec section 21 says payments aren't required
  * for the MVP, only the accounting).
+ *
+ * Admin emails (ADMIN_EMAILS) have no limit: `limit` is Infinity, so the
+ * routes' existing `used >= limit` check never trips, and `unlimited` lets
+ * the UI say so instead of printing "Infinity". Usage is still counted for
+ * them, so the real spend stays visible.
  */
 export async function getUsage(
   uid: string,
-  plan: string
-): Promise<{ used: number; limit: number; period: string }> {
+  plan: string,
+  email?: string | null
+): Promise<{ used: number; limit: number; period: string; unlimited: boolean }> {
   const period = currentPeriod();
   const doc = await getUsageDoc(uid, period);
+  const unlimited = isAdminEmail(email);
 
   return {
     used: doc?.creditsUsed ?? 0,
-    limit: PLAN_CREDITS[plan] ?? PLAN_CREDITS.free,
+    limit: unlimited ? Number.POSITIVE_INFINITY : (PLAN_CREDITS[plan] ?? PLAN_CREDITS.free),
     period,
+    unlimited,
   };
 }
 
