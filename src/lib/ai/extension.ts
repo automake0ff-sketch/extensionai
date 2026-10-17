@@ -1,6 +1,7 @@
 import { getAiProvider } from "./index";
 import { validateJsSyntax } from "@/lib/validator/js-syntax";
 import { validateManifest } from "@/lib/validator/manifest";
+import { findBlockingIssues } from "@/lib/validator";
 import { requestNeedsLlm } from "./llm-usage";
 import {
   AI_FEATURES_RECIPE,
@@ -188,22 +189,14 @@ export async function generateExtension(prompt: string): Promise<GenerateExtensi
 
     try {
       const candidate = extensionGenerationSchema.parse(extractJson(coderResponse.text));
-      const syntaxIssues = validateJsSyntax(candidate.files);
-      const manifestFile = candidate.files.find((f) => f.path === "manifest.json");
-      // validateManifest's first (and only, when the JSON itself is broken)
-      // issue is exactly "manifest.json is not valid JSON" -- confirmed as a
-      // real production failure (Validate flagged it after a generation
-      // that otherwise reported success). The schema above only checks that
-      // manifest.json exists as a file with string content, never that the
-      // content itself parses as JSON.
-      // Errors only: validateManifest also emits "warning"-level notes
-      // (e.g. broad permissions) that are advice for the user, not a reason
-      // to throw the whole generation away and retry.
-      const manifestIssues = manifestFile
-        ? validateManifest(manifestFile.content).filter((i) => i.level === "error")
-        : [];
-      if (syntaxIssues.length > 0 || manifestIssues.length > 0) {
-        throw new Error([...syntaxIssues, ...manifestIssues].map((i) => i.message).join("; "));
+      // Everything that would make Chrome refuse the extension or block its
+      // export, not just JSON/JS syntax: invalid manifest shapes, a manifest
+      // or HTML file pointing at a file that was never generated, eval and
+      // friends. Errors only -- warnings (broad permissions, innerHTML...) are
+      // advice for the user, not a reason to throw the generation away.
+      const blocking = findBlockingIssues(candidate.files);
+      if (blocking.length > 0) {
+        throw new Error(blocking.map((i) => i.message).join("; "));
       }
       generated = candidate;
       break;

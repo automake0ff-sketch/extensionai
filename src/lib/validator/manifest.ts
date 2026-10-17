@@ -1,4 +1,7 @@
-import type { ProjectFile, ValidationIssue } from "@/lib/types";
+import type { ValidationIssue } from "@/lib/types";
+
+/** The only two fields any validator here reads, so AI output ({path, content}) and stored ProjectFiles both fit. */
+export type FileLike = { path: string; content: string };
 
 const KNOWN_CHROME_PERMISSIONS = new Set([
   "activeTab",
@@ -65,6 +68,75 @@ const KNOWN_CHROME_PERMISSIONS = new Set([
 // narrowing" even though they may be legitimate (spec section 8/15).
 const SENSITIVE_PERMISSIONS = new Set(["tabs", "webRequest", "webRequestBlocking", "history", "cookies", "<all_urls>"]);
 
+/**
+ * Manifest shapes that make Chrome refuse to load the whole extension (or the
+ * Web Store reject it), so the user only finds out by loading the unpacked
+ * folder. Reported in production as "Not a valid tree for key description".
+ * Each is an error except the description length, which only the Web Store
+ * enforces.
+ */
+function validateLoadability(manifest: Record<string, unknown>, rawContent: string): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const error = (code: string, message: string) =>
+    issues.push({ level: "error", code, message, path: "manifest.json" });
+
+  if (manifest.description !== undefined) {
+    if (typeof manifest.description !== "string") {
+      error("manifest_description_invalid", '"description" must be a plain string, not an object or list.');
+    } else if (manifest.description.length > 132) {
+      issues.push({
+        level: "warning",
+        code: "manifest_description_long",
+        message: `"description" is ${manifest.description.length} characters; the Chrome Web Store limits it to 132.`,
+        path: "manifest.json",
+      });
+    }
+  }
+
+  if (typeof manifest.version === "string") {
+    const parts = manifest.version.split(".");
+    const validShape = /^\d+(\.\d+){0,3}$/.test(manifest.version) && parts.every((p) => Number(p) <= 65535);
+    if (!validShape) {
+      error(
+        "manifest_version_format",
+        `"version" must be 1 to 4 dot-separated numbers (each up to 65535), like "1.0.0"; "${manifest.version}" is not valid.`
+      );
+    }
+  }
+
+  if (manifest.commands !== undefined) {
+    if (typeof manifest.commands !== "object" || manifest.commands === null || Array.isArray(manifest.commands)) {
+      error("manifest_commands_invalid", '"commands" must be an object keyed by command name.');
+    } else {
+      let withShortcut = 0;
+      for (const [name, command] of Object.entries(manifest.commands as Record<string, unknown>)) {
+        const entry = (command && typeof command === "object" ? command : {}) as Record<string, unknown>;
+        if (entry.suggested_key !== undefined) withShortcut++;
+        const exempt = name.startsWith("_execute_");
+        if (!exempt && (typeof entry.description !== "string" || entry.description.trim() === "")) {
+          error("manifest_command_description", `commands.${name} needs a non-empty "description" string.`);
+        }
+      }
+      if (withShortcut > 4) {
+        error("manifest_commands_shortcuts", `Chrome allows at most 4 commands with a "suggested_key"; found ${withShortcut}.`);
+      }
+    }
+  }
+
+  if (manifest.key !== undefined && (typeof manifest.key !== "string" || !/^[A-Za-z0-9+/=]{100,}$/.test(manifest.key))) {
+    error("manifest_key_invalid", '"key" must be a valid base64 public key. Remove it unless a fixed extension ID is needed.');
+  }
+
+  if (/__MSG_[A-Za-z0-9_@]+__/.test(rawContent) && !manifest.default_locale) {
+    error(
+      "manifest_msg_without_locale",
+      'manifest.json uses a "__MSG_...__" localized string but has no "default_locale" and _locales folder. Use plain text instead.'
+    );
+  }
+
+  return issues;
+}
+
 export function validateManifest(manifestContent: string): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   let manifest: Record<string, unknown>;
@@ -108,6 +180,8 @@ export function validateManifest(manifestContent: string): ValidationIssue[] {
       path: "manifest.json",
     });
   }
+
+  issues.push(...validateLoadability(manifest, manifestContent));
 
   const permissions = Array.isArray(manifest.permissions) ? (manifest.permissions as string[]) : [];
   const hostPermissions = Array.isArray(manifest.host_permissions)
@@ -187,7 +261,7 @@ const DANGEROUS_PATTERNS: { pattern: RegExp; code: string; message: string }[] =
   },
 ];
 
-export function scanFileForSecurityIssues(file: ProjectFile): ValidationIssue[] {
+export function scanFileForSecurityIssues(file: FileLike): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   for (const { pattern, code, message } of DANGEROUS_PATTERNS) {
     if (pattern.test(file.content)) {
@@ -201,7 +275,7 @@ export function scanFileForSecurityIssues(file: ProjectFile): ValidationIssue[] 
  * Cross-checks that every file referenced from manifest.json or from
  * <script>/<link> tags in HTML files actually exists in the project.
  */
-export function validateReferencedFiles(files: ProjectFile[]): ValidationIssue[] {
+export function validateReferencedFiles(files: FileLike[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const byPath = new Set(files.map((f) => f.path));
   const manifestFile = files.find((f) => f.path === "manifest.json");
@@ -258,6 +332,10 @@ export function validateReferencedFiles(files: ProjectFile[]): ValidationIssue[]
   const optionsUi = manifest.options_ui as { page?: string } | undefined;
   if (optionsUi?.page) referenced.add(optionsUi.page);
 
+  if (typeof manifest.default_locale === "string") {
+    referenced.add(`_locales/${manifest.default_locale}/messages.json`);
+  }
+
   const sidePanel = manifest.side_panel as { default_path?: string } | undefined;
   if (sidePanel?.default_path) referenced.add(sidePanel.default_path);
 
@@ -288,21 +366,31 @@ export function validateReferencedFiles(files: ProjectFile[]): ValidationIssue[]
     }
   }
 
-  // HTML files referencing local scripts/styles that don't exist.
+  // HTML files referencing local scripts/styles that don't exist. A missing
+  // <script src> is an error: the page loads but nothing in it works (a
+  // popup full of dead buttons), which used to pass validation as a mere
+  // warning. A missing stylesheet or other file stays a warning.
   for (const file of files.filter((f) => f.path.endsWith(".html"))) {
-    const matches = file.content.matchAll(/(?:src|href)=["']([^"'/][^"']*)["']/g);
-    for (const match of matches) {
+    const scriptRefs = new Set(
+      [...file.content.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/gi)].map((m) => m[1])
+    );
+    for (const match of file.content.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
       const ref = match[1];
-      if (/^https?:\/\//.test(ref)) continue;
-      const resolved = resolveRelativePath(file.path, ref);
-      if (!byPath.has(resolved)) {
-        issues.push({
-          level: "warning",
-          code: "missing_html_reference",
-          message: `${file.path} references "${ref}" but that file does not exist in the project.`,
-          path: file.path,
-        });
-      }
+      // Not a project file: any URL scheme (http:, data:, mailto:, javascript:,
+      // chrome-extension:...), protocol-relative URLs and in-page anchors.
+      if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith("//") || ref.startsWith("#")) continue;
+
+      const path = ref.replace(/[?#].*$/, "");
+      const resolved = path.startsWith("/") ? path.slice(1) : resolveRelativePath(file.path, path);
+      if (byPath.has(resolved)) continue;
+
+      const isScript = scriptRefs.has(ref);
+      issues.push({
+        level: isScript ? "error" : "warning",
+        code: isScript ? "missing_script_reference" : "missing_html_reference",
+        message: `${file.path} references "${ref}" but that file does not exist in the project.`,
+        path: file.path,
+      });
     }
   }
 

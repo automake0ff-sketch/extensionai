@@ -1,5 +1,5 @@
-import type { ProjectFile, ValidationResult } from "@/lib/types";
-import { scanFileForSecurityIssues, validateManifest, validateReferencedFiles } from "./manifest";
+import type { ValidationIssue, ValidationResult } from "@/lib/types";
+import { scanFileForSecurityIssues, validateManifest, validateReferencedFiles, type FileLike } from "./manifest";
 import { validateJsSyntax } from "./js-syntax";
 import { validateInnerHtmlUsage, validateLlmHostPermissions, validateWebAccessibleResources } from "./practices";
 
@@ -7,7 +7,7 @@ import { validateInnerHtmlUsage, validateLlmHostPermissions, validateWebAccessib
  * Full "Extension health" check (spec section 15). Runs before ZIP export
  * and can also be triggered manually from the editor.
  */
-export function validateProject(files: ProjectFile[]): ValidationResult {
+export function validateProject(files: FileLike[]): ValidationResult {
   const manifestFile = files.find((f) => f.path === "manifest.json");
 
   const issues = [
@@ -24,4 +24,15 @@ export function validateProject(files: ProjectFile[]): ValidationResult {
 
   const valid = !issues.some((issue) => issue.level === "error");
   return { valid, issues };
+}
+
+/**
+ * Errors that would stop a generated project from loading in Chrome or from
+ * being exported, used to make the Coder retry before the user ever sees the
+ * result. hardcoded_secret is left out on purpose: its pattern also matches
+ * harmless placeholders (a settings page's example key), and retrying three
+ * times over a placeholder would fail generations that are fine.
+ */
+export function findBlockingIssues(files: FileLike[]): ValidationIssue[] {
+  return validateProject(files).issues.filter((i) => i.level === "error" && i.code !== "hardcoded_secret");
 }

@@ -71,6 +71,10 @@ Requirements:
 - Never use eval(), new Function(), remote code execution, or inline event handlers in HTML.
 - Do NOT add "icons" or "default_icon" to the manifest. You cannot create image files, and a
   manifest that references a missing icon makes Chrome refuse to load the extension.
+- manifest.json must load in Chrome or nothing works: "name", "version" and "description" are plain
+  strings ("version" only digits and dots, like 1.0.0). Never add "key", "default_locale" or
+  __MSG_...__ strings. If you declare "commands", every command except the _execute_* ones needs a
+  non-empty "description" string, and at most 4 may have a "suggested_key".
 - For a popup button that needs to analyze/scan/read data from the current page on click
   (an on-page-SEO audit, a word counter, a scraper, etc.): use
   chrome.scripting.executeScript({ target: { tabId }, func: someFunction }) and read the
